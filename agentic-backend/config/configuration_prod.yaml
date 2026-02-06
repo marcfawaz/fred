@@ -155,6 +155,17 @@ ai:
       type: "agent"
       class_path: "agentic_backend.agents.custodian.custodian.Custodian"
       enabled: true
+    - id: "Aegis"
+      name: "Aegis"
+      type: "agent"
+      class_path: "agentic_backend.agents.rags.aegis.aegis_rag_expert.Aegis"
+      enabled: true
+      chat_options:
+        search_policy_selection: true
+        libraries_selection: true
+        search_rag_scoping: true
+        attach_files: true
+        documents_selection: true
     - id: "Georges"
       name: "Georges"
       type: "agent"
