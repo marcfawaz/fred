@@ -419,6 +419,17 @@ const injectedRtkApi = api.injectEndpoints({
         body: queryArg.bodyProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPost,
       }),
     }),
+    getUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGet: build.query<
+      GetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetApiResponse,
+      GetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/knowledge-flow/v1/upload-process-documents/progress`,
+        params: {
+          workflow_id: queryArg.workflowId,
+        },
+      }),
+    }),
     fastMarkdownKnowledgeFlowV1FastTextPost: build.mutation<
       FastMarkdownKnowledgeFlowV1FastTextPostApiResponse,
       FastMarkdownKnowledgeFlowV1FastTextPostApiArg
@@ -1249,6 +1260,12 @@ export type ProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPostApiResp
 export type ProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPostApiArg = {
   bodyProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPost: BodyProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPost;
 };
+export type GetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetApiResponse =
+  /** status 200 Successful Response */ ProcessDocumentsProgressResponse;
+export type GetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetApiArg = {
+  /** Workflow id returned by /upload-process-documents */
+  workflowId: string;
+};
 export type FastMarkdownKnowledgeFlowV1FastTextPostApiResponse = /** status 200 Successful Response */ any;
 export type FastMarkdownKnowledgeFlowV1FastTextPostApiArg = {
   /** Response format: 'json' or 'text' */
@@ -1965,6 +1982,25 @@ export type BodyProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPost = 
   files: Blob[];
   metadata_json: string;
 };
+export type DocumentProgress = {
+  document_uid: string;
+  stages: {
+    [key: string]: ProcessingStatus;
+  };
+  fully_processed?: boolean;
+  has_failed?: boolean;
+};
+export type ProcessDocumentsProgressResponse = {
+  total_documents: number;
+  documents_found: number;
+  documents_missing: number;
+  documents_with_preview: number;
+  documents_vectorized: number;
+  documents_sql_indexed: number;
+  documents_fully_processed: number;
+  documents_failed: number;
+  documents: DocumentProgress[];
+};
 export type BodyFastMarkdownKnowledgeFlowV1FastTextPost = {
   file: Blob;
   /** JSON string of FastTextOptions */
@@ -2527,25 +2563,6 @@ export type ProcessLibraryRequest = {
   processor: string;
   document_uids?: string[] | null;
 };
-export type DocumentProgress = {
-  document_uid: string;
-  stages: {
-    [key: string]: ProcessingStatus;
-  };
-  fully_processed?: boolean;
-  has_failed?: boolean;
-};
-export type ProcessDocumentsProgressResponse = {
-  total_documents: number;
-  documents_found: number;
-  documents_missing: number;
-  documents_with_preview: number;
-  documents_vectorized: number;
-  documents_sql_indexed: number;
-  documents_fully_processed: number;
-  documents_failed: number;
-  documents: DocumentProgress[];
-};
 export type ProcessDocumentsProgressRequest = {
   workflow_id?: string | null;
 };
@@ -2626,6 +2643,8 @@ export const {
   useLazyGetLibraryPipelineKnowledgeFlowV1ProcessingPipelinesLibraryLibraryTagIdGetQuery,
   useUploadDocumentsSyncKnowledgeFlowV1UploadDocumentsPostMutation,
   useProcessDocumentsSyncKnowledgeFlowV1UploadProcessDocumentsPostMutation,
+  useGetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetQuery,
+  useLazyGetUploadProcessDocumentsProgressKnowledgeFlowV1UploadProcessDocumentsProgressGetQuery,
   useFastMarkdownKnowledgeFlowV1FastTextPostMutation,
   useFastIngestKnowledgeFlowV1FastIngestPostMutation,
   useDeleteFastIngestKnowledgeFlowV1FastIngestDocumentUidDeleteMutation,
