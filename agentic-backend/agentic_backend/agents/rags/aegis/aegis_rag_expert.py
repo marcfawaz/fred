@@ -372,7 +372,7 @@ class Aegis(AgentFlow):
             "agent.step_latency_ms",
             dims={"step": "vector_search", "policy": search_policy},
         ):
-            hits = self.search_client.search(
+            hits = await self.search_client.search(
                 question=question,
                 top_k=top_k,
                 document_library_tags_ids=doc_tag_ids,
@@ -437,7 +437,7 @@ class Aegis(AgentFlow):
 
         top_r = self.get_tuned_int("rag.top_r", default=8)
         with self.kpi_timer("agent.step_latency_ms", dims={"step": "rerank"}):
-            reranked = self.search_client.rerank(
+            reranked = await self.search_client.rerank(
                 question=question, documents=documents, top_r=top_r
             )
 
@@ -585,7 +585,7 @@ class Aegis(AgentFlow):
             ),
         ]
 
-        chat_context = self.chat_context_text()
+        chat_context = await self.chat_context_text()
         if chat_context:
             messages.append(HumanMessage(content=chat_context))
 
@@ -724,7 +724,7 @@ class Aegis(AgentFlow):
             "agent.step_latency_ms", dims={"step": "corrective_retrieve"}
         ):
             for q in followups:
-                hits = self.search_client.search(
+                hits = await self.search_client.search(
                     question=q,
                     top_k=per_query_k,
                     document_library_tags_ids=doc_tag_ids,
