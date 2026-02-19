@@ -143,6 +143,11 @@ ai:
       enabled: true
       metadata:
         deep_search_hidden_in_ui: true
+    - id: "Aegis"
+      name: "Aegis"
+      type: "agent"
+      class_path: "agentic_backend.agents.aegis.aegis_rag_expert.Aegis"
+      enabled: true
     - id: "Tessa"
       name: "Tessa"
       type: "agent"
