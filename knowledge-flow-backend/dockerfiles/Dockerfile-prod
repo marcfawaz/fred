@@ -95,12 +95,11 @@ ENV XDG_CACHE_HOME=${APP_CACHE_DIR}
 ENV HF_HOME=${APP_CACHE_DIR}/huggingface
 ENV HUGGINGFACE_HUB_CACHE=${APP_CACHE_DIR}/huggingface/hub
 ENV HF_HUB_CACHE=${APP_CACHE_DIR}/huggingface/hub
-ENV TRANSFORMERS_CACHE=${APP_CACHE_DIR}/huggingface/transformers
 ENV SENTENCE_TRANSFORMERS_HOME=${APP_CACHE_DIR}/huggingface
 ENV TORCH_HOME=${APP_CACHE_DIR}/torch
-ENV EASYOCR_MODULE_PATH=${APP_CACHE_DIR}/easyocr
 ENV DOCLING_ARTIFACTS_PATH=${APP_CACHE_DIR}/docling/models
-RUN mkdir -p ${APP_CACHE_DIR}/huggingface/hub ${APP_CACHE_DIR}/huggingface/transformers ${APP_CACHE_DIR}/torch ${APP_CACHE_DIR}/easyocr ${DOCLING_ARTIFACTS_PATH} && \
+ENV EASYOCR_MODULE_PATH=${DOCLING_ARTIFACTS_PATH}/easyocr
+RUN mkdir -p ${APP_CACHE_DIR}/huggingface/hub ${APP_CACHE_DIR}/torch ${DOCLING_ARTIFACTS_PATH} ${EASYOCR_MODULE_PATH} && \
     chmod -R 0777 ${APP_CACHE_DIR}
 
 # Hugging Face / reranker cache layout
