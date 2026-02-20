@@ -835,7 +835,7 @@ applications:
         name: cross-encoder/ms-marco-MiniLM-L-12-v2
         settings:
           online: false
-          local_path: /app/.cache/huggingface
+          local_path: /home/fred-user/.cache/huggingface/hub
       storage:
         postgres:
           host: localhost
@@ -1206,7 +1206,7 @@ applications:
         name: cross-encoder/ms-marco-MiniLM-L-12-v2
         settings:
           online: false
-          local_path: /app/.cache/huggingface
+          local_path: /home/fred-user/.cache/huggingface/hub
       storage:
         postgres:
           host: localhost
