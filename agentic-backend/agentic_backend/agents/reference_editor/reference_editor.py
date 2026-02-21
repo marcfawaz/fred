@@ -1,3 +1,17 @@
+# Copyright Thales 2025
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from __future__ import annotations
 
 import logging
@@ -11,8 +25,8 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Checkpointer
 
 from agentic_backend.agents.reference_editor.powerpoint_template_util import (
-    fill_slide_from_structured_response,
-    fill_word_from_structured_response,
+    fill_slide_from_structured_response_async,
+    fill_word_from_structured_response_async,
     referenceSchema,
 )
 from agentic_backend.application_context import get_default_chat_model
@@ -256,10 +270,23 @@ class ReferenceEditor(AgentFlow):
         template_tool = self.get_template_tool()
         word_template_tool = self.get_word_template_tool()
         validator_tool = self.get_validator_tool()
+        base_system_prompt = self.render(self.get_tuned_text("prompts.system") or "")
+        download_guardrail = """
+# RÈGLE DE RESTITUTION DES TÉLÉCHARGEMENTS (OBLIGATOIRE)
+- Si template_tool ou word_template_tool retourne un LinkPart, ne le réécris jamais en texte.
+- N'affiche jamais d'URL brute, de markdown `[Download ...]`, ni de ligne `Download ...`.
+- Laisse uniquement le LinkPart pour le téléchargement.
+- Tu peux dire en texte : "Le bouton de téléchargement est ci-dessous."
+"""
+        system_prompt = (
+            f"{base_system_prompt.rstrip()}\n\n{download_guardrail.strip()}"
+            if base_system_prompt
+            else download_guardrail.strip()
+        )
 
         return create_agent(
             model=get_default_chat_model(),
-            system_prompt=self.render(self.get_tuned_text("prompts.system") or ""),
+            system_prompt=system_prompt,
             tools=[
                 template_tool,
                 word_template_tool,
@@ -271,7 +298,7 @@ class ReferenceEditor(AgentFlow):
 
     def get_validator_tool(self):
         @tool
-        async def validator_tool(data: dict):
+        async def validator_tool(data: dict | None = None):
             """
             Outil permettant de valider le format des données avant de les passer à l'outil de templetisation.
             L'outil retourne [] si le schéma est valide et la liste des erreurs sinon.
@@ -279,6 +306,12 @@ class ReferenceEditor(AgentFlow):
             IMPORTANT : Si cet outil retourne [] (liste vide), tu DOIS IMMÉDIATEMENT appeler template_tool(data={{...}})
             avec exactement les mêmes données dans le MÊME tour de conversation. Ne t'arrête pas ici.
             """
+            if data is None:
+                return (
+                    "Missing required argument: data. "
+                    "Call validator_tool(data={...}) with the structured payload."
+                )
+
             if len(data.keys()) != 3:
                 return (
                     "Bad root key format. The JSON should have the following format:\n"
@@ -322,7 +355,7 @@ class ReferenceEditor(AgentFlow):
             Outil permettant de templétiser le fichier envoyé par l'utilisateur.
             La nature du fichier importe peu tant que le format des données est respecté. Tu n'as pas besoin de préciser quel fichier,
             l'outil possède déjà cette information.
-            L'outil retournera un lien de téléchargement une fois le fichier templatisé.
+            L'outil retourne un LinkPart pour l'interface. Ne jamais réécrire ce lien en texte/Markdown.
             """
             # 1. Fetch template from secure asset storage
             template_key = (
@@ -341,15 +374,15 @@ class ReferenceEditor(AgentFlow):
                 actual_data = data.get("data", data)
                 # Create clients for image search
                 from agentic_backend.common.kf_base_client import KfBaseClient
-                from agentic_backend.common.vector_search_client import (
+                from agentic_backend.common.kf_vectorsearch_client import (
                     VectorSearchClient,
                 )
 
-                vector_search_client = VectorSearchClient()
+                vector_search_client = VectorSearchClient(agent=self)
                 kf_base_client = KfBaseClient(
                     allowed_methods=frozenset({"GET", "POST"}), agent=self
                 )
-                fill_slide_from_structured_response(
+                await fill_slide_from_structured_response_async(
                     template_path,
                     actual_data,
                     output_path,
@@ -398,7 +431,7 @@ class ReferenceEditor(AgentFlow):
                     title=f"Download {upload_result.file_name}",
                     kind=LinkKind.download,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                )
+                ).model_dump(mode="json")
             else:
                 return last_error
 
@@ -419,7 +452,7 @@ class ReferenceEditor(AgentFlow):
             Outil permettant de templétiser un fichier Word envoyé par l'utilisateur.
             La nature du fichier importe peu tant que le format des données est respecté. Tu n'as pas besoin de préciser quel fichier,
             l'outil possède déjà cette information.
-            L'outil retournera un lien de téléchargement une fois le fichier templatisé.
+            L'outil retourne un LinkPart pour l'interface. Ne jamais réécrire ce lien en texte/Markdown.
             """
             # 1. Fetch template from secure asset storage
             template_key = (
@@ -438,15 +471,15 @@ class ReferenceEditor(AgentFlow):
                 actual_data = data.get("data", data)
                 # Create clients for image search
                 from agentic_backend.common.kf_base_client import KfBaseClient
-                from agentic_backend.common.vector_search_client import (
+                from agentic_backend.common.kf_vectorsearch_client import (
                     VectorSearchClient,
                 )
 
-                vector_search_client = VectorSearchClient()
+                vector_search_client = VectorSearchClient(agent=self)
                 kf_base_client = KfBaseClient(
                     allowed_methods=frozenset({"GET", "POST"}), agent=self
                 )
-                fill_word_from_structured_response(
+                await fill_word_from_structured_response_async(
                     template_path,
                     actual_data,
                     output_path,
@@ -492,6 +525,6 @@ class ReferenceEditor(AgentFlow):
                 title=f"Download {upload_result.file_name}",
                 kind=LinkKind.download,
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
+            ).model_dump(mode="json")
 
         return word_template_tool
