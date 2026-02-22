@@ -18,6 +18,7 @@ import logging
 import tempfile
 from pathlib import Path
 
+from fred_core import OwnerFilter
 from jsonschema import Draft7Validator
 from langchain.agents import create_agent
 from langchain.tools import tool
@@ -38,13 +39,55 @@ from agentic_backend.core.agents.agent_spec import (
     MCPServerRef,
     UIHints,
 )
-from agentic_backend.core.agents.runtime_context import RuntimeContext
+from agentic_backend.core.agents.runtime_context import (
+    RuntimeContext,
+    get_document_library_tags_ids,
+    get_document_uids,
+    get_vector_search_scopes,
+)
 from agentic_backend.core.chatbot.chat_schema import (
     LinkKind,
     LinkPart,
 )
 
 logger = logging.getLogger(__name__)
+EXPECTED_REFERENCE_SECTIONS = {"informationsProjet", "contexte", "syntheseProjet"}
+
+
+def _normalize_reference_payload_for_validation(
+    data: dict | None,
+) -> tuple[dict | None, str | None]:
+    """
+    Accept both payload styles:
+    - {"data": {...}}  (preferred, matches tool schema)
+    - {...}            (legacy convenience)
+    """
+    if data is None:
+        return (
+            None,
+            "Missing required argument: data. Call validator_tool(data={...}) with the structured payload.",
+        )
+    if not isinstance(data, dict):
+        return None, "Invalid payload type. Expected a JSON object."
+
+    payload = data.get("data", data)
+    if not isinstance(payload, dict):
+        return (
+            None,
+            "Invalid payload format. Expected `data` to be a JSON object.",
+        )
+
+    keys = set(payload.keys())
+    if keys != EXPECTED_REFERENCE_SECTIONS:
+        return (
+            None,
+            "Bad root key format. Expected sections are: "
+            '{"informationsProjet": {...}, "contexte": {...}, "syntheseProjet": {...}} '
+            "(inside `data` if wrapped).",
+        )
+
+    return payload, None
+
 
 # --- Configuration & Tuning ---
 # ------------------------------
@@ -264,6 +307,29 @@ class ReferenceEditor(AgentFlow):
     async def aclose(self):
         await self.mcp.aclose()
 
+    def _build_vector_search_scope_options(self) -> dict:
+        """
+        Build strict retrieval constraints for direct vector-search calls done inside
+        template/image utilities.
+        """
+        settings = self.get_agent_settings()
+        runtime_context = self.get_runtime_context()
+        include_session_scope, include_corpus_scope = get_vector_search_scopes(
+            runtime_context
+        )
+
+        return {
+            "document_library_tags_ids": get_document_library_tags_ids(runtime_context),
+            "document_uids": get_document_uids(runtime_context),
+            "owner_filter": (
+                OwnerFilter.TEAM if settings.team_id else OwnerFilter.PERSONAL
+            ),
+            "team_id": settings.team_id,
+            "session_id": runtime_context.session_id if runtime_context else None,
+            "include_session_scope": include_session_scope,
+            "include_corpus_scope": include_corpus_scope,
+        }
+
     def get_compiled_graph(
         self, checkpointer: Checkpointer | None = None
     ) -> CompiledStateGraph:
@@ -306,37 +372,25 @@ class ReferenceEditor(AgentFlow):
             IMPORTANT : Si cet outil retourne [] (liste vide), tu DOIS IMMÉDIATEMENT appeler template_tool(data={{...}})
             avec exactement les mêmes données dans le MÊME tour de conversation. Ne t'arrête pas ici.
             """
-            if data is None:
-                return (
-                    "Missing required argument: data. "
-                    "Call validator_tool(data={...}) with the structured payload."
-                )
-
-            if len(data.keys()) != 3:
-                return (
-                    "Bad root key format. The JSON should have the following format:\n"
-                    "{{\n"
-                    '    "enjeuxBesoins": {{...}},\n'
-                    '    "cv": {{...}},\n'
-                    '    "prestationFinanciere": {{...}}\n'
-                    "}}"
-                )
+            payload, error_message = _normalize_reference_payload_for_validation(data)
+            if error_message:
+                return error_message
 
             def shorten_error_message(error):
                 """Convert verbose validation errors to concise messages"""
                 field_path = ".".join(str(p) for p in error.path) or "root"
                 if error.validator == "type":
                     return f"{field_path} type invalid. Expected {error.schema.get('type')}."
+                if error.validator == "required":
+                    return f"{field_path} missing required field."
                 return f"{field_path} invalid. Reason: {error.validator}."
 
             validator = Draft7Validator(referenceSchema)
 
-            errors = [shorten_error_message(e) for e in validator.iter_errors(data)]
+            errors = [shorten_error_message(e) for e in validator.iter_errors(payload)]
             if not errors:
-                return "✓ Validation réussie ! Appelle maintenant template_tool(data={{...}}) avec ces mêmes données."
+                return "✓ Validation réussie ! Appelle maintenant template_tool(data={...}) avec ces mêmes données."
             return errors
-
-        return validator_tool
 
         return validator_tool
 
@@ -379,6 +433,7 @@ class ReferenceEditor(AgentFlow):
                 )
 
                 vector_search_client = VectorSearchClient(agent=self)
+                search_options = self._build_vector_search_scope_options()
                 kf_base_client = KfBaseClient(
                     allowed_methods=frozenset({"GET", "POST"}), agent=self
                 )
@@ -388,6 +443,7 @@ class ReferenceEditor(AgentFlow):
                     output_path,
                     vector_search_client,
                     kf_base_client,
+                    search_options=search_options,
                 )
 
             # 3. Upload the generated asset to user storage
@@ -476,6 +532,7 @@ class ReferenceEditor(AgentFlow):
                 )
 
                 vector_search_client = VectorSearchClient(agent=self)
+                search_options = self._build_vector_search_scope_options()
                 kf_base_client = KfBaseClient(
                     allowed_methods=frozenset({"GET", "POST"}), agent=self
                 )
@@ -485,6 +542,7 @@ class ReferenceEditor(AgentFlow):
                     output_path,
                     vector_search_client,
                     kf_base_client,
+                    search_options=search_options,
                 )
 
             # 3. Upload the generated asset to user storage

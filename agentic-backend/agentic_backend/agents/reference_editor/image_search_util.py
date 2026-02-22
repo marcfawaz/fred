@@ -16,11 +16,26 @@ import io
 import logging
 from typing import Optional
 
+from fred_core import OwnerFilter
+
 logger = logging.getLogger(__name__)
+_ALLOWED_SEARCH_OPTION_KEYS = {
+    "document_library_tags_ids",
+    "document_uids",
+    "owner_filter",
+    "team_id",
+    "session_id",
+    "include_session_scope",
+    "include_corpus_scope",
+}
 
 
 async def search_image_by_name(
-    image_name: str, vector_search_client, kf_base_client
+    image_name: str,
+    vector_search_client,
+    kf_base_client,
+    *,
+    search_options: dict | None = None,
 ) -> Optional[str]:
     """
     Search for an image document by its name in the knowledge flow backend.
@@ -35,11 +50,23 @@ async def search_image_by_name(
     """
     try:
         logger.info(f"Searching for image with name: {image_name}")
+        scoped_options = {
+            k: v
+            for k, v in (search_options or {}).items()
+            if k in _ALLOWED_SEARCH_OPTION_KEYS and v is not None
+        }
+        # Fail closed: never run unscoped corpus search from this helper.
+        if "owner_filter" not in scoped_options:
+            scoped_options["owner_filter"] = OwnerFilter.PERSONAL
+            logger.warning(
+                "search_image_by_name called without owner_filter; defaulting to personal scope."
+            )
 
         hits = await vector_search_client.search(
             question=image_name,
             top_k=5,
             search_policy="semantic",
+            **scoped_options,
         )
 
         if hits and len(hits) > 0:
@@ -125,7 +152,11 @@ async def download_image(document_uid: str, kf_base_client) -> Optional[io.Bytes
 
 
 async def get_image_for_technology(
-    technology_name: str, vector_search_client, kf_base_client
+    technology_name: str,
+    vector_search_client,
+    kf_base_client,
+    *,
+    search_options: dict | None = None,
 ) -> Optional[io.BytesIO]:
     """
     High-level function to search and download an image for a given technology name.
@@ -145,7 +176,10 @@ async def get_image_for_technology(
 
     # Search for the image
     document_uid = await search_image_by_name(
-        clean_name, vector_search_client, kf_base_client
+        clean_name,
+        vector_search_client,
+        kf_base_client,
+        search_options=search_options,
     )
 
     if not document_uid:
