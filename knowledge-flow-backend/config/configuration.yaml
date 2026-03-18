@@ -209,8 +209,8 @@ document_sources:
     base_path: ~/Documents/Fred
     description: "Personal local documents available for pull-mode ingestion"
 embedding_model:
-  provider: ollama
-  name: granite-embedding:278m-fp16
+  provider: openai
+  name: text-embedding-3-large
   settings:
     max_retries: 0
     timeout:
