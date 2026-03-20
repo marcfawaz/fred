@@ -1,5 +1,6 @@
-CODE_QUALITY_DIRS := fred-core agentic-backend knowledge-flow-backend
-TEST_DIRS := agentic-backend knowledge-flow-backend
+CODE_QUALITY_DIRS := fred-core agentic-backend knowledge-flow-backend control-plane-backend
+TEST_DIRS := agentic-backend knowledge-flow-backend control-plane-backend
+DOCKER_BUILD_DIRS := agentic-backend knowledge-flow-backend control-plane-backend frontend
 
 ##@ Code quality
 
@@ -37,6 +38,24 @@ test: ## Run non-integration test suites in backend submodules
 		env -u VIRTUAL_ENV $(MAKE) -C $$dir test; \
 	done
 
+##@ Run
+
+.PHONY: run-frontend
+run-frontend: ## Run frontend only
+	$(MAKE) -C frontend run
+
+.PHONY: run-agentic
+run-agentic: ## Run agentic backend API only
+	$(MAKE) -C agentic-backend run
+
+.PHONY: run-knowledge-flow
+run-knowledge-flow: ## Run knowledge-flow backend API only
+	$(MAKE) -C knowledge-flow-backend run
+
+.PHONY: run-control-plane
+run-control-plane: ## Run control-plane backend API only
+	$(MAKE) -C control-plane-backend run
+
 .PHONY: dev
 dev:  ## Start development environment in all submodules
 	@set -e; \
@@ -45,6 +64,16 @@ dev:  ## Start development environment in all submodules
 		$(MAKE) -C $$dir dev & \
 	done; \
 	wait
+
+##@ Docker
+
+.PHONY: docker-build
+docker-build: ## Build Docker images for agentic, knowledge-flow, control-plane, and frontend
+	@set -e; \
+	for dir in $(DOCKER_BUILD_DIRS); do \
+		echo "************ Building Docker image in $$dir ************"; \
+		$(MAKE) -C $$dir docker-build; \
+	done
 
 ##@ Release
 
