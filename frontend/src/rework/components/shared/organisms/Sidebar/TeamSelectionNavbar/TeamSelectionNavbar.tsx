@@ -1,4 +1,4 @@
-import { useListTeamsQuery } from "../../../../../../slices/controlPlane/controlPlaneApi";
+import { useListTeamsQuery } from "../../../../../../slices/controlPlane/controlPlaneApiEnhancements";
 import TeamSelectionItem from "@shared/organisms/Sidebar/TeamSelectionNavbar/TeamSelectionItem/TeamSelectionItem.tsx";
 import styles from "./TeamSelectionNavbar.module.scss";
 import Separator from "@shared/atoms/Separator/Separator.tsx";
@@ -17,9 +17,9 @@ export default function TeamSelectionNavbar() {
       <div>
         <span className={styles.title}>{t("rework.sidebar.title")}</span>
         <TeamSelectionItem
-          redirection={`/team/${userDetails?.personalTeamId}/agents`}
+          redirection={`/team/${userDetails?.personalTeam.id}/agents`}
           teamName={t("rework.sidebar.team.userTeam")}
-          selected={pathname.startsWith(`/team/personal`)}
+          selected={pathname.startsWith(`/team/${userDetails?.personalTeam.id}`)}
           icon={{ category: "outlined", type: "Person", filled: true }}
         />
         <TeamSelectionItem

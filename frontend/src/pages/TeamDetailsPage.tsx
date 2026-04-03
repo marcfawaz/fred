@@ -4,14 +4,22 @@ import { useParams } from "react-router-dom";
 import { NavigationTabs, TabConfig } from "../components/NavigationTabs";
 import { TeamAppsPage } from "../components/teamDetails/TeamAppsPage";
 import { TeamDocumentsLibrary } from "../components/teamDetails/TeamDocumentsLibrary";
-import { useGetTeamQuery } from "../slices/controlPlane/controlPlaneApi";
+import { useGetTeamQuery } from "../slices/controlPlane/controlPlaneApiEnhancements";
+import { useGetUserDetailsControlPlaneV1UserGetQuery } from "../slices/controlPlane/controlPlaneOpenApi.ts";
 import { KnowledgeHub } from "./KnowledgeHub.tsx";
 
 export function TeamDetailsPage() {
   const { t } = useTranslation();
 
   const { teamId } = useParams<{ teamId: string }>();
-  const { data: team, isLoading } = useGetTeamQuery({ teamId: teamId !== "user" ? teamId : "" }, { skip: !teamId });
+  const { data: userDetails } = useGetUserDetailsControlPlaneV1UserGetQuery();
+  const isPersonalTeam = teamId === userDetails?.personalTeam.id;
+  const { data: fetchedTeam, isLoading } = useGetTeamQuery(
+    { teamId: teamId || "" },
+    { skip: !teamId || isPersonalTeam },
+  );
+  const team = isPersonalTeam ? fetchedTeam : userDetails?.personalTeam;
+
   // todo: handle error (404)
 
   if (teamId === undefined) {

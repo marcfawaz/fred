@@ -1,21 +1,30 @@
 import Button from "@components/shared/atoms/Button/Button";
-import styles from "./TeamAgentsPage.module.scss";
-import { useTranslation } from "react-i18next";
-import { useListAgentsAgenticV1AgentsGetQuery } from "../../../../slices/agentic/agenticOpenApi.ts";
-import { useParams } from "react-router-dom";
 import AgentCard from "@shared/organisms/AgentCard/AgentCard.tsx";
-import { useGetTeamQuery } from "../../../../slices/controlPlane/controlPlaneApi.ts";
 import { useMemo, useState } from "react";
-import { useAgentUpdater } from "../../../../hooks/useAgentUpdater.ts";
+import { useTranslation } from "react-i18next";
+import { Link, useParams } from "react-router-dom";
 import { AnyAgent } from "../../../../common/agent.ts";
 import { AgentCreateEditDrawer } from "../../../../components/agentHub/AgentCreateEditDrawer.tsx";
+import { useAgentUpdater } from "../../../../hooks/useAgentUpdater.ts";
+import { useListAgentsAgenticV1AgentsGetQuery } from "../../../../slices/agentic/agenticOpenApi.ts";
+import { useGetTeamQuery } from "../../../../slices/controlPlane/controlPlaneApiEnhancements";
+import { useGetUserDetailsControlPlaneV1UserGetQuery } from "../../../../slices/controlPlane/controlPlaneOpenApi.ts";
+import styles from "./TeamAgentsPage.module.scss";
 
 export default function TeamAgentsPage() {
   const { t } = useTranslation();
+
   const { teamId } = useParams();
-  const { data: agents, refetch } = useListAgentsAgenticV1AgentsGetQuery({ ownerFilter: "team", teamId });
-  const { data: team } = useGetTeamQuery({ teamId: teamId !== "user" ? teamId : "" }, { skip: !teamId });
+  const { data: userDetails } = useGetUserDetailsControlPlaneV1UserGetQuery();
+  const isPersonalTeam = teamId === userDetails?.personalTeam.id;
+
+  const ownerFilter = isPersonalTeam ? "personal" : "team";
+  const { data: agents, refetch } = useListAgentsAgenticV1AgentsGetQuery({ ownerFilter, teamId });
+  const { data: noPersonalTeam } = useGetTeamQuery({ teamId: teamId || "" }, { skip: isPersonalTeam });
+  const team = isPersonalTeam ? userDetails?.personalTeam : noPersonalTeam;
+
   const { updateEnabled } = useAgentUpdater();
+
   const [selected, setSelected] = useState<AnyAgent | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -39,6 +48,19 @@ export default function TeamAgentsPage() {
     setEditOpen(true);
   };
 
+  const renderAgentCard = (agent: AnyAgent, withKey: boolean = false) => {
+    return (
+      <AgentCard
+        key={withKey ? agent.id : undefined}
+        agent={agent}
+        // todo: in future, rely on direct `update` and `delete` permissions from agent (when they are returned by backend)
+        readOnly={canUpdateAgents}
+        onToggleEnabled={handleToggleEnabled}
+        onEditAgent={handleEdit}
+      />
+    );
+  };
+
   return (
     <div className={styles.teamAgentContainer}>
       <div className={styles.title}>
@@ -56,18 +78,15 @@ export default function TeamAgentsPage() {
         )}
       </div>
       <div className={styles.agentList}>
-        {/*
-            todo: in future, rely on direct `update` and `delete` permissions from agent (when they are returned by backend)
-         */}
         {agents?.map((agent) => (
           <>
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              readOnly={canUpdateAgents}
-              onToggleEnabled={handleToggleEnabled}
-              onEditAgent={handleEdit}
-            />
+            {!agent.enabled ? (
+              renderAgentCard(agent, true)
+            ) : (
+              <Link to={`/team/${teamId}/new-chat/${agent.id}`} key={agent.id}>
+                {renderAgentCard(agent)}
+              </Link>
+            )}
           </>
         ))}
       </div>

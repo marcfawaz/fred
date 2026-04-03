@@ -3,9 +3,7 @@ import { Agent } from "../../../../../slices/agentic/agenticOpenApi.ts";
 import Icon from "@components/shared/atoms/Icon/Icon.tsx";
 import IconButton from "@components/shared/atoms/IconButton/IconButton.tsx";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
 import { AnyAgent } from "../../../../../common/agent.ts";
-import { useMemo } from "react";
 
 interface AgentCardProps {
   agent: Agent;
@@ -17,56 +15,52 @@ interface AgentCardProps {
 export default function AgentCard({ agent, readOnly, onToggleEnabled, onEditAgent }: AgentCardProps) {
   const { t } = useTranslation();
 
-  const cardContent = useMemo(() => {
-    return (
-      <div className={styles.agentCard} data-enabled={agent.enabled}>
-        <div className={styles.stateLayer}>
-          <div className={styles.agentInfo}>
-            <div className={styles.agentPresentation}>
-              <div className={styles.agentIcon}>
-                <Icon category={"outlined"} type={"person"} />
-              </div>
-              <div className={styles.agentIdentity}>
-                <div className={styles.agentName}>{agent.name}</div>
-                <div className={styles.agentRole}>{agent.tuning.role}</div>
-              </div>
+  return (
+    <div className={styles.agentCard} data-enabled={agent.enabled}>
+      <div className={styles.stateLayer}>
+        <div className={styles.agentInfo}>
+          <div className={styles.agentPresentation}>
+            <div className={styles.agentIcon}>
+              <Icon category={"outlined"} type={"person"} />
             </div>
-            <div className={styles.agentDescription}>{agent.tuning.description}</div>
+            <div className={styles.agentIdentity}>
+              <div className={styles.agentName}>{agent.name}</div>
+              <div className={styles.agentRole}>{agent.tuning.role}</div>
+            </div>
           </div>
-          {readOnly && (
-            <div className={styles.actions}>
-              <IconButton
-                color={"on-surface"}
-                variant={"icon"}
-                size={"medium"}
-                icon={{ category: "outlined", type: agent.enabled ? "visibility" : "visibility_off" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onToggleEnabled(agent);
-                }}
-              />
-              <IconButton
-                color={"on-surface"}
-                variant={"icon"}
-                size={"medium"}
-                icon={{ category: "outlined", type: "edit" }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onEditAgent(agent);
-                }}
-              />
-            </div>
-          )}
+          <div className={styles.agentDescription}>{agent.tuning.description}</div>
         </div>
-        <div className={styles.newChat}>
-          <span className={styles.newChatIcon}>
-            <Icon category={"outlined"} type={"reviews"} />
-          </span>
-          {t("rework.agentCard.startChat")}
-        </div>
+        {readOnly && (
+          <div className={styles.actions}>
+            <IconButton
+              color={"on-surface"}
+              variant={"icon"}
+              size={"medium"}
+              icon={{ category: "outlined", type: agent.enabled ? "visibility" : "visibility_off" }}
+              onClick={(e) => {
+                e.preventDefault();
+                onToggleEnabled(agent);
+              }}
+            />
+            <IconButton
+              color={"on-surface"}
+              variant={"icon"}
+              size={"medium"}
+              icon={{ category: "outlined", type: "edit" }}
+              onClick={(e) => {
+                e.preventDefault();
+                onEditAgent(agent);
+              }}
+            />
+          </div>
+        )}
       </div>
-    );
-  }, [agent, readOnly]);
-
-  return agent.enabled ? <Link to={`/new-chat/${agent.id}`}>{cardContent}</Link> : cardContent;
+      <div className={styles.newChat}>
+        <span className={styles.newChatIcon}>
+          <Icon category={"outlined"} type={"reviews"} />
+        </span>
+        {t("rework.agentCard.startChat")}
+      </div>
+    </div>
+  );
 }
