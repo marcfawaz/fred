@@ -6,7 +6,6 @@
   width: 240px;
   height: 100%;
   min-height: 0;
-  --banner-img: url("/images/default-team-banner.png");
 }
 
 .bannerContainer {
@@ -15,8 +14,8 @@
   border-radius: 0 0 var(--radius-s) var(--radius-s);
   background:
     linear-gradient(
-      color-mix(in srgb, var(--secondary-container), transparent 50%),
-      color-mix(in srgb, var(--secondary-container), transparent 50%)
+      color-mix(in srgb, var(--secondary-container), transparent 60%),
+      color-mix(in srgb, var(--secondary-container), transparent 60%)
     ),
     var(--banner-img) center / cover;
   padding: 0 var(--spacing-xs) var(--spacing-xs) var(--spacing-s);
