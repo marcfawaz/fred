@@ -15,6 +15,7 @@ export default function TeamSelectionNavbar() {
   const { pathname } = useLocation();
   const { t } = useTranslation();
 
+  // TODO 1501 Remove when teams are not based on keycloak anymore
   const yourTeams = teams && teams.filter((t) => t.is_member);
 
   return (
