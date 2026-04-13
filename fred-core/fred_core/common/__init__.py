@@ -34,7 +34,7 @@ from .structures import (
     StoreConfig,
     TemporalSchedulerConfig,
 )
-from .team_id import TeamId, PERSONAL_TEAM_ID
+from .team_id import PERSONAL_TEAM_ID, TeamId
 from .utils import raise_internal_error
 
 __all__ = [

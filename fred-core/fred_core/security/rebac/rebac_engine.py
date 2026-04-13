@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable
-from fred_core.common import PERSONAL_TEAM_ID
 
+from fred_core.common import PERSONAL_TEAM_ID
 from fred_core.security.keycloak.keycloack_admin_client import (
     KeycloackDisabled,
     create_keycloak_admin,
