@@ -565,6 +565,8 @@ class RebacEngine(ABC):
         if isinstance(self.keycloak_client, KeycloackDisabled):
             return set()
 
+        # Each user is a member of its own personal team
+        # TODO 1501 Remove when teams are not based on keycloak anymore
         relation: set[Relation] = {
             Relation(
                 subject=RebacReference(Resource.USER, user.uid),
