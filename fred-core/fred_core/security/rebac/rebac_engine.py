@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable
+from fred_core.common import PERSONAL_TEAM_ID
 
 from fred_core.security.keycloak.keycloack_admin_client import (
     KeycloackDisabled,
@@ -564,8 +565,13 @@ class RebacEngine(ABC):
         if isinstance(self.keycloak_client, KeycloackDisabled):
             return set()
 
-        relation: set[Relation] = set()
-
+        relation: set[Relation] = {
+            Relation(
+                subject=RebacReference(Resource.USER, user.uid),
+                relation=RelationType.MEMBER,
+                resource=RebacReference(Resource.TEAM, PERSONAL_TEAM_ID),
+            )
+        }
         for group in user.groups:
             relation.add(
                 Relation(
