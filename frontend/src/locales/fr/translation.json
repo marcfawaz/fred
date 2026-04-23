@@ -22,7 +22,8 @@
     "loadingPreview": "Aperçu en cours de chargement...",
     "loadingPreviewError": "Impossible de charger l'aperçu.",
     "view": "Aperçu",
-    "contactSupport": "Contacter l'équipe support."
+    "contactSupport": "Contacter l'équipe support.",
+    "failToLoad": "Impossible de charger les resources"
   },
   "dataHub": {
     "title": "Hub des Données - Lignage des documents",
@@ -396,7 +397,9 @@
       },
       "chat_options_libraries_selection": {
         "title": "Sélecteur de bibliothèques de documents",
-        "description": "Permettre aux utilisateurs de sélectionner des bibliothèques de documents/sources de connaissances pour cet agent."
+        "description": "Permettre aux utilisateurs de sélectionner des bibliothèques de documents/sources de connaissances pour cet agent.",
+        "library_selection": "Base de connaissance",
+        "library_selection_description": "Sélectionner les ressources exploitables par le {{agentsNicknameSingular}}"
       }
     }
   },
@@ -682,7 +685,7 @@
       "includeToggle": "Basculer la recherche sur les dossiers",
       "includeTooltipOn": "Les dossiers sont incluses dans la recherche pour cette conversation.",
       "includeTooltipOff": "Les dossiers sont exclues de la recherche pour cette conversation.",
-      "empty": "Aucun dossier sélectionnée. Toutes les dossiers de documents visibles seront recherchées.",
+      "empty": "Aucun dossier sélectionnée. La recherche ne retournera aucun résultat.",
       "previewTitle": "Dossiers",
       "noDescription": "Aucune description disponible."
     },

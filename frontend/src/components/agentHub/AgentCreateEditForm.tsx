@@ -105,6 +105,7 @@ export function AgentCreateEditForm({
     (agent?.tuning?.mcp_servers ?? []).map((ref) => ({
       id: ref.id,
       require_tools: ref.require_tools ?? [],
+      params: ref.params ?? undefined,
     })),
   );
   const [classPath, setClassPath] = useState<string | null>(agent?.class_path ?? null);
@@ -187,6 +188,7 @@ export function AgentCreateEditForm({
             (tuning.mcp_servers ?? []).map((ref) => ({
               id: ref.id,
               require_tools: ref.require_tools ?? [],
+              params: ref.params ?? undefined,
             })),
           );
         }
@@ -468,7 +470,7 @@ export function AgentCreateEditForm({
 
       {/* ── Tools ── */}
       {showTuningFields && (
-        <AgentToolsSelection mcpServerRefs={mcpServerRefs} onMcpServerRefsChange={setMcpServerRefs} />
+        <AgentToolsSelection mcpServerRefs={mcpServerRefs} onMcpServerRefsChange={setMcpServerRefs} teamId={teamId} />
       )}
 
       {/* ── Dynamic tuning fields ── */}

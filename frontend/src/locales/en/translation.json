@@ -21,7 +21,8 @@
     "dropHere": "Drop files here or click to browse",
     "loadingPreview": "Loading preview...",
     "loadingPreviewError": "Unable to load preview.",
-    "contactSupport": "Contact support team."
+    "contactSupport": "Contact support team.",
+    "failToLoad": "Fail to load resources"
   },
   "dataHub": {
     "title": "Data Hub - Document Lineage",
@@ -395,7 +396,9 @@
       },
       "chat_options_libraries_selection": {
         "title": "Document libraries picker",
-        "description": "Let users select document libraries/knowledge sources for this agent."
+        "description": "Let users select document libraries/knowledge sources for this agent.",
+        "library_selection": "Knowledge base",
+        "library_selection_description": "Select resources the {{agentsNicknameSingular}} can use"
       }
     }
   },
@@ -681,7 +684,7 @@
       "includeToggle": "Toggle folder retrieval",
       "includeTooltipOn": "Folders are included in retrieval for this conversation.",
       "includeTooltipOff": "Folders are excluded from retrieval for this conversation.",
-      "empty": "No folder selected. All visible document folders will be searched.",
+      "empty": "No folder selected. Search will return no results.",
       "previewTitle": "Folder",
       "noDescription": "No description available."
     },
