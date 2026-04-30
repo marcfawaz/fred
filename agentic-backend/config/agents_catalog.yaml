@@ -14,6 +14,19 @@ agents:
       attach_files: true
       include_corpus_in_search: true
 
+  - id: "Aegis"
+    name: "Aegis"
+    type: "agent"
+    class_path: "agentic_backend.agents.v1.production.aegis.aegis_rag_expert.Aegis"
+    enabled: true
+    chat_options:
+      search_policy_selection: true
+      libraries_selection: true
+      search_rag_scoping: true
+      attach_files: true
+      documents_selection: true
+      
+
   # - id: "Archie"
   #   name: "Archie"
   #   type: "agent"
