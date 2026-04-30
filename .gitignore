@@ -223,3 +223,5 @@ openapi.json
 
 # wtf worktree port allocations
 PORTS.md
+agentic-backend/agentic_backend/agents/v1/.DS_Store
+agentic-backend/agentic_backend/agents/v1/production/.DS_Store
