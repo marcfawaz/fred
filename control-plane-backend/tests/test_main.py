@@ -61,6 +61,40 @@ async def test_list_users_returns_empty_without_keycloak_m2m() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_current_user_details_handles_auth_disabled_mock_user() -> None:
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/control-plane/v1/user")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["cguValidated"] is None
+    assert payload["personalTeam"]["id"] == "personal"
+    assert payload["personalTeam"]["name"] == "Equipe personnelle"
+    assert payload["personalTeam"]["member_count"] == 1
+    assert payload["personalTeam"]["is_private"] is True
+    assert payload["personalTeam"]["owners"] == []
+    assert payload["personalTeam"]["permissions"] == [
+        "can_read",
+        "can_update_resources",
+        "can_update_agents",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_validate_gcu_ignores_auth_disabled_mock_user() -> None:
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post("/control-plane/v1/gcu")
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_create_user_requires_keycloak_m2m() -> None:
     app = create_app()
     async with AsyncClient(

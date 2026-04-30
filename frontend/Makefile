@@ -9,6 +9,11 @@ NODE_VERSION=22.13.0
 .PHONY: check-node
 check-node: ## Check if Node.js version is at least the required version
 	@REQUIRED=$(NODE_VERSION); \
+	if ! command -v node >/dev/null 2>&1; then \
+		echo "Node.js v$$REQUIRED or higher is required, but \`node\` is not available in PATH."; \
+		echo "Install it with \`nvm install $$REQUIRED\`, then run \`nvm use $$REQUIRED\`."; \
+		exit 1; \
+	fi; \
 	CURRENT=$$(node -v | sed 's/^v//'); \
 	verlte() { [ "$$1" = "$$2" ] && return 0 || [  "$$(printf '%s\n' "$$1" "$$2" | sort -V | head -n1)" = "$$1" ]; }; \
 	if ! verlte "$$REQUIRED" "$$CURRENT"; then \

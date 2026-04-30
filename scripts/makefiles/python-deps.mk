@@ -26,7 +26,7 @@ $(TARGET)/.uv-installed: $(TARGET)/.venv-created
 	$(call run_with_file_lock,$(TARGET)/.uv.lock,'test -f $@ || ($(PIP) install --upgrade pip setuptools wheel && $(PIP) install uv && touch $@)')
 
 $(TARGET)/.compiled: pyproject.toml $(TARGET)/.uv-installed
-	$(call run_with_file_lock,$(TARGET)/.compiled.lock,'test -f $@ || ($(UV) sync --extra dev && touch $@)')
+	$(call run_with_file_lock,$(TARGET)/.compiled.lock,'$(UV) sync --extra dev && touch $@')
 
 .PHONY: dev
 dev: $(TARGET)/.compiled ## Install from compiled lock
