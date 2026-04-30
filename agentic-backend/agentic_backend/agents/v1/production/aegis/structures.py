@@ -12,32 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Annotated, List, Optional, TypedDict
+from typing import Annotated, List
 
 from fred_core.store import VectorSearchHit
-from langchain_core.messages import AIMessage
-from langgraph.graph import add_messages
+from langchain_core.messages import AIMessage, AnyMessage
+from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 
-class AegisGraphState(TypedDict):
+class AegisGraphState(TypedDict, total=False):
     """
-    Graph state for Aegis (Self-RAG + Corrective-RAG).
+    Purpose:
+        Define the partial LangGraph state updates exchanged by Aegis nodes.
 
-    This state is intentionally explicit so each node can make deterministic
-    routing decisions without hidden side effects.
+    How to use:
+        Nodes should read from this state but return only the keys they update,
+        especially `messages`, so the runtime can persist LangGraph events.
     """
 
-    messages: Annotated[list, add_messages]
-    question: Optional[str]
-    documents: Optional[List[VectorSearchHit]]
-    sources: Optional[List[VectorSearchHit]]
-    iteration: Optional[int]
-    draft_answer: Optional[AIMessage]
-    self_check: Optional["SelfCheckOutput"]
-    followup_queries: Optional[List[str]]
-    decision: Optional[str]
-    irrelevant_documents: Optional[List[VectorSearchHit]]
+    messages: Annotated[list[AnyMessage], add_messages]
+    question: str
+    documents: List[VectorSearchHit]
+    sources: List[VectorSearchHit]
+    iteration: int
+    draft_answer: AIMessage | None
+    self_check: "SelfCheckOutput | None"
+    followup_queries: List[str]
+    decision: str | None
+    irrelevant_documents: List[VectorSearchHit]
 
 
 class SelfCheckOutput(BaseModel):
