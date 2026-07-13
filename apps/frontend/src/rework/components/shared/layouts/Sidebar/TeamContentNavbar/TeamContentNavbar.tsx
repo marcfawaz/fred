@@ -25,6 +25,7 @@ import { useFrontendProperties } from "../../../../../../hooks/useFrontendProper
 import { useSelectedTeam } from "../../../../../../hooks/useSelectedTeam.ts";
 import { useTeamCapabilities } from "@hooks/useTeamCapabilities.ts";
 import { IconType } from "@shared/utils/Type.ts";
+import { FeatureFlagKey, isFeatureEnabled } from "../../../../../../common/config.tsx";
 
 /**
  * Team-scoped sidebar section — the second vertical bar.
@@ -48,6 +49,7 @@ export default function TeamContentNavbar() {
 
   const settingsBase = `/team/${teamId}/settings`;
   const inSettings = !!teamId && pathname.startsWith(settingsBase);
+  const isAiWikisEnabled = isFeatureEnabled(FeatureFlagKey.ENABLE_AI_WIKIS);
 
   // The personal space has no team-admin permission to gate a settings icon on
   // (`canOpenTeamSettings` is always false there — OBSERV-02 / BACKLOG.md §7b),
@@ -76,6 +78,16 @@ export default function TeamContentNavbar() {
       icon: { category: "outlined", type: "edit_note", filled: true },
       linkProps: { to: `/team/${teamId}/prompts` },
     },
+    ...(isAiWikisEnabled
+      ? [
+          {
+            type: "link" as const,
+            label: "AI Wikis",
+            icon: { category: "outlined" as const, type: "auto_stories" as IconType, filled: true },
+            linkProps: { to: `/team/${teamId}/wikis` },
+          },
+        ]
+      : []),
   ];
 
   // Launching and cancelling evaluation campaigns requires agent-update rights

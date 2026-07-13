@@ -112,6 +112,21 @@ type team
     # -> must be member; deliberately excludes `public` (unlike can_read)
     define can_use_team_agents: team_member
 
+    # AI Wikis team-scoped capabilities (AUTHZ-WIKI-01). These are exposed by
+    # Fred's canonical model for AI Wiki consumers, but runtime AI Wiki
+    # enforcement and deployment-factory synchronization are intentionally
+    # deferred. Read/contribution are team-role-only; `public`, organization,
+    # and platform roles must not grant wiki access.
+    define can_read_wikis: team_member
+    define can_contribute_wikis: team_editor
+    define can_review_wiki_changes: team_admin
+    define can_manage_wiki_schema: team_admin
+    define can_manage_wiki_lifecycle: team_admin
+    define can_manage_wiki_governance: team_admin
+    define can_use_wiki_review_assistant: team_admin
+    define can_run_wiki_guarded_auto_apply: team_admin
+    define can_run_wiki_autonomous_apply: team_admin
+
     # Team-scoped evaluation capabilities (RFC §6.2/§3.2). team_admin may run
     # evaluations directly (RFC §24.6: team_admin may also grant team_analyst
     # without separate platform approval); team_editor has no evaluation

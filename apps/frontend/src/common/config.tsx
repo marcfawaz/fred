@@ -49,6 +49,7 @@ type RawAppConfig = {
 export const FeatureFlagKey = {
   ENABLE_K8_FEATURES: "enableK8Features",
   ENABLE_ELEC_WARFARE: "enableElecWarfare",
+  ENABLE_AI_WIKIS: "enableAiWikis",
 } as const;
 export type FeatureFlagKeyType = (typeof FeatureFlagKey)[keyof typeof FeatureFlagKey];
 

@@ -35,6 +35,15 @@ export type TeamCapabilities = {
   canAdministerAdmins: boolean;
   canReadConversations: boolean;
   canUseTeamAgents: boolean;
+  canReadWikis: boolean;
+  canContributeWikis: boolean;
+  canReviewWikiChanges: boolean;
+  canManageWikiSchema: boolean;
+  canManageWikiLifecycle: boolean;
+  canManageWikiGovernance: boolean;
+  canUseWikiReviewAssistant: boolean;
+  canRunWikiGuardedAutoApply: boolean;
+  canRunWikiAutonomousApply: boolean;
   canRunEvaluations: boolean;
   canManageEvaluationCorpus: boolean;
   canReadConversationsForEvaluation: boolean;
@@ -59,6 +68,15 @@ const PERMISSION_TO_FLAG: Record<TeamPermission, keyof TeamCapabilities> = {
   can_administer_admins: "canAdministerAdmins",
   can_read_conversations: "canReadConversations",
   can_use_team_agents: "canUseTeamAgents",
+  can_read_wikis: "canReadWikis",
+  can_contribute_wikis: "canContributeWikis",
+  can_review_wiki_changes: "canReviewWikiChanges",
+  can_manage_wiki_schema: "canManageWikiSchema",
+  can_manage_wiki_lifecycle: "canManageWikiLifecycle",
+  can_manage_wiki_governance: "canManageWikiGovernance",
+  can_use_wiki_review_assistant: "canUseWikiReviewAssistant",
+  can_run_wiki_guarded_auto_apply: "canRunWikiGuardedAutoApply",
+  can_run_wiki_autonomous_apply: "canRunWikiAutonomousApply",
   can_run_evaluations: "canRunEvaluations",
   can_manage_evaluation_corpus: "canManageEvaluationCorpus",
   can_read_conversations_for_evaluation: "canReadConversationsForEvaluation",

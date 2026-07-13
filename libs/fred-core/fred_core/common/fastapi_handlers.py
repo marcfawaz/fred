@@ -30,6 +30,15 @@ _TEAM_PERMISSION_MESSAGES: dict[str, str] = {
     "can_administer_admins": "You are not allowed to manage admins in this team.",
     "can_read_members": "You are not allowed to view team members.",
     "can_update_info": "You are not allowed to update this team.",
+    "can_read_wikis": "You are not allowed to read AI Wikis in this team.",
+    "can_contribute_wikis": "You are not allowed to contribute to AI Wikis in this team.",
+    "can_review_wiki_changes": "You are not allowed to review AI Wiki changes in this team.",
+    "can_manage_wiki_schema": "You are not allowed to manage AI Wiki schemas in this team.",
+    "can_manage_wiki_lifecycle": "You are not allowed to manage the AI Wiki lifecycle in this team.",
+    "can_manage_wiki_governance": "You are not allowed to manage AI Wiki governance in this team.",
+    "can_use_wiki_review_assistant": "You are not allowed to use the AI Wiki review assistant in this team.",
+    "can_run_wiki_guarded_auto_apply": "You are not allowed to run guarded AI Wiki auto-apply in this team.",
+    "can_run_wiki_autonomous_apply": "You are not allowed to run autonomous AI Wiki auto-apply in this team.",
 }
 
 

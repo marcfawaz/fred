@@ -28,6 +28,19 @@ from fred_core import KeycloakUser, RebacEngine, TeamPermission
 from fred_core.common import TeamId
 
 
+AI_WIKI_PERMISSIONS = {
+    TeamPermission.CAN_READ_WIKIS,
+    TeamPermission.CAN_CONTRIBUTE_WIKIS,
+    TeamPermission.CAN_REVIEW_WIKI_CHANGES,
+    TeamPermission.CAN_MANAGE_WIKI_SCHEMA,
+    TeamPermission.CAN_MANAGE_WIKI_LIFECYCLE,
+    TeamPermission.CAN_MANAGE_WIKI_GOVERNANCE,
+    TeamPermission.CAN_USE_WIKI_REVIEW_ASSISTANT,
+    TeamPermission.CAN_RUN_WIKI_GUARDED_AUTO_APPLY,
+    TeamPermission.CAN_RUN_WIKI_AUTONOMOUS_APPLY,
+}
+
+
 class _FakeRebac:
     """Grants permissions purely from an explicit in-memory set — mirrors a
     persisted-tuple-only OpenFGA engine. Records every `contextual_relations`
@@ -90,4 +103,93 @@ async def test_team_permissions_come_from_persisted_tuples() -> None:
         TeamPermission.CAN_READ,
         TeamPermission.CAN_USE_TEAM_AGENTS,
     }
+    assert all(cr is None for cr in rebac.received_contextual_relations)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("role_name", "granted", "expected_ai_wiki_permissions"),
+    [
+        (
+            "team_member",
+            {TeamPermission.CAN_READ_WIKIS},
+            {TeamPermission.CAN_READ_WIKIS},
+        ),
+        (
+            "team_analyst",
+            {TeamPermission.CAN_READ_WIKIS},
+            {TeamPermission.CAN_READ_WIKIS},
+        ),
+        (
+            "team_editor",
+            {
+                TeamPermission.CAN_READ_WIKIS,
+                TeamPermission.CAN_CONTRIBUTE_WIKIS,
+            },
+            {
+                TeamPermission.CAN_READ_WIKIS,
+                TeamPermission.CAN_CONTRIBUTE_WIKIS,
+            },
+        ),
+        (
+            "team_admin",
+            {
+                TeamPermission.CAN_READ_WIKIS,
+                TeamPermission.CAN_REVIEW_WIKI_CHANGES,
+                TeamPermission.CAN_MANAGE_WIKI_SCHEMA,
+                TeamPermission.CAN_MANAGE_WIKI_LIFECYCLE,
+                TeamPermission.CAN_MANAGE_WIKI_GOVERNANCE,
+                TeamPermission.CAN_USE_WIKI_REVIEW_ASSISTANT,
+                TeamPermission.CAN_RUN_WIKI_GUARDED_AUTO_APPLY,
+                TeamPermission.CAN_RUN_WIKI_AUTONOMOUS_APPLY,
+            },
+            {
+                TeamPermission.CAN_READ_WIKIS,
+                TeamPermission.CAN_REVIEW_WIKI_CHANGES,
+                TeamPermission.CAN_MANAGE_WIKI_SCHEMA,
+                TeamPermission.CAN_MANAGE_WIKI_LIFECYCLE,
+                TeamPermission.CAN_MANAGE_WIKI_GOVERNANCE,
+                TeamPermission.CAN_USE_WIKI_REVIEW_ASSISTANT,
+                TeamPermission.CAN_RUN_WIKI_GUARDED_AUTO_APPLY,
+                TeamPermission.CAN_RUN_WIKI_AUTONOMOUS_APPLY,
+            },
+        ),
+        (
+            "team_admin_and_editor",
+            AI_WIKI_PERMISSIONS,
+            AI_WIKI_PERMISSIONS,
+        ),
+        (
+            "public_only_visibility",
+            {TeamPermission.CAN_READ},
+            set(),
+        ),
+        (
+            "platform_admin_without_team_relation",
+            set(),
+            set(),
+        ),
+    ],
+    ids=lambda value: value if isinstance(value, str) else None,
+)
+async def test_ai_wiki_team_permissions_are_exposed_from_rebac_only(
+    role_name: str,
+    granted: set[TeamPermission],
+    expected_ai_wiki_permissions: set[TeamPermission],
+) -> None:
+    """TeamWithPermissions exposes the AI Wiki capabilities ReBAC grants.
+
+    Role semantics are guarded in the compiled schema tests; this keeps the
+    control-plane adapter honest: no public/platform fallback and no dropped
+    new enum values when `_get_team_permissions_for_user` builds
+    `TeamWithPermissions.permissions`.
+    """
+    rebac = _FakeRebac(granted=granted)
+    user = _user()
+
+    permissions = await _get_team_permissions_for_user(
+        cast(RebacEngine, rebac), user, TeamId(f"{role_name}-team")
+    )
+
+    assert set(permissions) & AI_WIKI_PERMISSIONS == expected_ai_wiki_permissions
     assert all(cr is None for cr in rebac.received_contextual_relations)

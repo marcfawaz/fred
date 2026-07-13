@@ -137,6 +137,18 @@ class TeamPermission(str, Enum):
     # also admits `public`) — gates seeing/using the team's agents.
     CAN_USE_TEAM_AGENTS = "can_use_team_agents"
 
+    # AI Wikis team-scoped capabilities (AUTHZ-WIKI-01). These mirror the
+    # canonical OpenFGA schema; AI Wiki runtime enforcement is added later.
+    CAN_READ_WIKIS = "can_read_wikis"
+    CAN_CONTRIBUTE_WIKIS = "can_contribute_wikis"
+    CAN_REVIEW_WIKI_CHANGES = "can_review_wiki_changes"
+    CAN_MANAGE_WIKI_SCHEMA = "can_manage_wiki_schema"
+    CAN_MANAGE_WIKI_LIFECYCLE = "can_manage_wiki_lifecycle"
+    CAN_MANAGE_WIKI_GOVERNANCE = "can_manage_wiki_governance"
+    CAN_USE_WIKI_REVIEW_ASSISTANT = "can_use_wiki_review_assistant"
+    CAN_RUN_WIKI_GUARDED_AUTO_APPLY = "can_run_wiki_guarded_auto_apply"
+    CAN_RUN_WIKI_AUTONOMOUS_APPLY = "can_run_wiki_autonomous_apply"
+
     # Team-scoped evaluation capabilities (RFC §6.2/§3.2).
     CAN_RUN_EVALUATIONS = "can_run_evaluations"
     CAN_MANAGE_EVALUATION_CORPUS = "can_manage_evaluation_corpus"

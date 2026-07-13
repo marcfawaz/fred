@@ -1,5 +1,11 @@
 {
   "frontend_basename": "/",
+  "feature_flags": {
+    "enableAiWikis": true
+  },
+  "properties": {
+    "aiWikisFrontendUrl": "/ai-wikis"
+  },
   "user_auth": {
     "enabled": true,
     "realm_url": "http://app-keycloak:8080/realms/app",

@@ -29,18 +29,19 @@ import TeamUsagePage from "@components/pages/TeamUsagePage/TeamUsagePage.tsx";
 import ReleaseNotesPage from "@components/pages/ReleaseNotesPage/ReleaseNotesPage.tsx";
 import TeamAgentsPage from "@components/pages/TeamAgentsPage/TeamAgentsPage.tsx";
 import UserSettingsPage from "@components/pages/UserSettingsPage/UserSettingsPage.tsx";
+import AiWikisPage from "@components/pages/AiWikisPage/AiWikisPage.tsx";
+import { useUserCapabilities } from "@hooks/useUserCapabilities.ts";
 import MainLayout from "@shared/layouts/MainLayout/MainLayout.tsx";
 import React, { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate, RouteObject, useParams } from "react-router-dom";
 import LoadingWithProgress from "../components/LoadingWithProgress";
 import RendererPlayground from "../components/markdown/RenderedPlayground";
 import { Protected } from "../components/Protected";
-import { useUserCapabilities } from "@hooks/useUserCapabilities.ts";
 import { ComingSoon } from "../pages/ComingSoon.tsx";
 import { McpHub } from "../pages/McpHub";
 import { PageError } from "../pages/PageError";
 import Unauthorized from "../pages/PageUnauthorized";
-import { getConfig } from "./config";
+import { FeatureFlagKey, getConfig, isFeatureEnabled } from "./config";
 
 const basename = getConfig().frontend_basename;
 
@@ -79,6 +80,14 @@ const SuspenseWrapper = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<LoadingWithProgress />}>{children}</Suspense>
 );
 
+const AiWikisFeatureRoute = () => {
+  const { teamId = "personal" } = useParams<{ teamId: string }>();
+  return isFeatureEnabled(FeatureFlagKey.ENABLE_AI_WIKIS) ? (
+    <AiWikisPage />
+  ) : (
+    <Navigate to={`/team/${teamId}/agents`} replace />
+  );
+};
 export const routes: RouteObject[] = [
   {
     path: "/",
@@ -124,6 +133,14 @@ export const routes: RouteObject[] = [
         // (old team document library) was superseded by the Resources/Files page.
         path: "team/:teamId",
         element: <Navigate to="agents" replace />,
+      },
+      {
+        path: "team/:teamId/wikis/*",
+        element: <AiWikisFeatureRoute />,
+      },
+      {
+        path: "team/:teamId/*",
+        element: <PageError />,
       },
       {
         path: "marketplace/teams",

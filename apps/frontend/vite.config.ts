@@ -32,7 +32,15 @@ export default defineConfig({
       "/knowledge-flow": process.env.VITE_BACKEND_URL_KNOWLEDGE || "http://localhost:8111",
       "/control-plane": process.env.VITE_BACKEND_URL_CONTROL_PLANE || "http://localhost:8222",
       "/evaluation": process.env.VITE_BACKEND_URL_EVALUATION || "http://localhost:8336",
+      "/ai-wikis": {
+        target: process.env.VITE_AI_WIKIS_FRONTEND_URL || "http://localhost:5174",
+        changeOrigin: true,
+        ws: true,
+      },
+      "/wiki": process.env.VITE_BACKEND_URL_WIKI || "http://localhost:8030",
       "/samples": process.env.VITE_BACKEND_URL_SAMPLES || "http://localhost:8010",
+      "/dt": process.env.VITE_BACKEND_URL_DT_AGENTS || "http://localhost:8020",
+      "/synthia": process.env.VITE_BACKEND_URL_SYNTHIA || "http://localhost:8020",
     },
   },
   resolve: {
