@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 from factory_config import TEST_TEAM, USERS
 
@@ -18,7 +21,7 @@ from factory_config import TEST_TEAM, USERS
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO_PATH = REPO_ROOT / "validation" / "scenarios" / "test_ai_wiki_authorization.py"
 CONTRACT_PATH = REPO_ROOT / "validation" / "ai_wiki_authz_campaign_contract.json"
-AI_WIKI_REPO_CONTRACT_PATH = REPO_ROOT.parent / "fred-knowledge-wiki" / "scripts" / "ai_wiki_authz_campaign_contract.json"
+AI_WIKI_CONTRACT_RELATIVE_PATH = Path("scripts") / "ai_wiki_authz_campaign_contract.json"
 
 
 def _load_scenario() -> ModuleType:
@@ -32,6 +35,31 @@ def _load_scenario() -> ModuleType:
 
 scenario = _load_scenario()
 contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+
+
+def _resolve_ai_wiki_contract_path(
+    *,
+    env: dict[str, str] | None = None,
+    fred_parent: Path | None = None,
+) -> Path | None:
+    """Find the optional AI Wiki contract copy without requiring a sibling checkout."""
+    env = env if env is not None else os.environ
+    if configured := env.get("FRED_AI_WIKI_SRC"):
+        return Path(configured) / AI_WIKI_CONTRACT_RELATIVE_PATH
+
+    parent = fred_parent if fred_parent is not None else REPO_ROOT.parent
+    sibling_contract = parent / "fred-knowledge-wiki" / AI_WIKI_CONTRACT_RELATIVE_PATH
+    if sibling_contract.is_file():
+        return sibling_contract
+    return None
+
+
+def _assert_contracts_match(ai_wiki_contract_path: Path, fred_contract_path: Path = CONTRACT_PATH) -> None:
+    fred_bytes = fred_contract_path.read_bytes()
+    ai_wiki_bytes = ai_wiki_contract_path.read_bytes()
+
+    assert json.loads(ai_wiki_bytes) == json.loads(fred_bytes)
+    assert ai_wiki_bytes == fred_bytes
 
 
 def test_live_scenario_references_documented_personas() -> None:
@@ -132,13 +160,63 @@ def test_live_scenario_uses_the_canonical_contract() -> None:
 
 
 def test_ai_wiki_and_fred_contract_copies_are_synchronized_when_repo_is_present() -> None:
-    assert AI_WIKI_REPO_CONTRACT_PATH.is_file(), (
-        f"AI Wiki contract not found at {AI_WIKI_REPO_CONTRACT_PATH}; "
-        "set up the sibling fred-knowledge-wiki checkout before changing this contract."
-    )
+    ai_wiki_contract_path = _resolve_ai_wiki_contract_path()
+    if ai_wiki_contract_path is None:
+        pytest.skip(
+            "AI Wiki checkout not found. Set FRED_AI_WIKI_SRC=/absolute/path/to/fred-knowledge-wiki "
+            "or place fred-knowledge-wiki beside this Fred checkout to enable cross-repo contract drift checks."
+        )
 
-    ai_wiki_contract = json.loads(AI_WIKI_REPO_CONTRACT_PATH.read_text(encoding="utf-8"))
-    assert ai_wiki_contract == contract
+    assert ai_wiki_contract_path.is_file(), (
+        f"AI Wiki contract not found at {ai_wiki_contract_path}; "
+        "FRED_AI_WIKI_SRC must point to a fred-knowledge-wiki checkout containing "
+        "scripts/ai_wiki_authz_campaign_contract.json."
+    )
+    _assert_contracts_match(ai_wiki_contract_path)
+
+
+def test_ai_wiki_contract_resolver_prefers_explicit_env_path(tmp_path: Path) -> None:
+    explicit = tmp_path / "explicit-ai-wiki"
+    sibling_parent = tmp_path / "workspace"
+    sibling_contract = sibling_parent / "fred-knowledge-wiki" / AI_WIKI_CONTRACT_RELATIVE_PATH
+    sibling_contract.parent.mkdir(parents=True)
+    sibling_contract.write_text("{}", encoding="utf-8")
+
+    resolved = _resolve_ai_wiki_contract_path(env={"FRED_AI_WIKI_SRC": str(explicit)}, fred_parent=sibling_parent)
+
+    assert resolved == explicit / AI_WIKI_CONTRACT_RELATIVE_PATH
+
+
+def test_ai_wiki_contract_resolver_accepts_normal_sibling_path(tmp_path: Path) -> None:
+    sibling_contract = tmp_path / "fred-knowledge-wiki" / AI_WIKI_CONTRACT_RELATIVE_PATH
+    sibling_contract.parent.mkdir(parents=True)
+    sibling_contract.write_text("{}", encoding="utf-8")
+
+    assert _resolve_ai_wiki_contract_path(env={}, fred_parent=tmp_path) == sibling_contract
+
+
+def test_ai_wiki_contract_resolver_returns_none_for_absent_checkout(tmp_path: Path) -> None:
+    assert _resolve_ai_wiki_contract_path(env={}, fred_parent=tmp_path) is None
+
+
+def test_ai_wiki_contract_matcher_accepts_matching_raw_bytes(tmp_path: Path) -> None:
+    fred_contract = tmp_path / "fred.json"
+    ai_wiki_contract = tmp_path / "ai-wiki.json"
+    raw = b'{"version":"AUTHZ-WIKI-07D","capabilities":[]}\n'
+    fred_contract.write_bytes(raw)
+    ai_wiki_contract.write_bytes(raw)
+
+    _assert_contracts_match(ai_wiki_contract, fred_contract)
+
+
+def test_ai_wiki_contract_matcher_fails_on_drifted_present_contract(tmp_path: Path) -> None:
+    fred_contract = tmp_path / "fred.json"
+    ai_wiki_contract = tmp_path / "ai-wiki.json"
+    fred_contract.write_text('{"version":"AUTHZ-WIKI-07D","capabilities":[]}\n', encoding="utf-8")
+    ai_wiki_contract.write_text('{"version":"AUTHZ-WIKI-07D","capabilities":["drift"]}\n', encoding="utf-8")
+
+    with pytest.raises(AssertionError):
+        _assert_contracts_match(ai_wiki_contract, fred_contract)
 
 
 def test_probe_status_evaluator_rejects_ambiguous_denials() -> None:

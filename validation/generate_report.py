@@ -37,6 +37,7 @@ GROUP_LABELS = {
     "test_platform_role_isolation.py": "Platform-role isolation (AUTHZ-05)",
     "test_content_scope_bypass.py": "Content-scope team isolation",
     "test_runtime_team_isolation.py": "Team isolation (cross-team + runtime)",
+    "test_ai_wiki_authorization.py": "AI Wiki authorization (AUTHZ-WIKI-07D)",
 }
 
 # Group display order - anything unlisted is appended after these, alphabetically.

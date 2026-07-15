@@ -137,8 +137,9 @@ class TeamPermission(str, Enum):
     # also admits `public`) — gates seeing/using the team's agents.
     CAN_USE_TEAM_AGENTS = "can_use_team_agents"
 
-    # AI Wikis team-scoped capabilities (AUTHZ-WIKI-01). These mirror the
-    # canonical OpenFGA schema; AI Wiki runtime enforcement is added later.
+    # AI Wikis team-scoped capabilities (AUTHZ-WIKI-01). These values mirror
+    # the canonical OpenFGA schema consumed by the independently deployed AI
+    # Wiki backend.
     CAN_READ_WIKIS = "can_read_wikis"
     CAN_CONTRIBUTE_WIKIS = "can_contribute_wikis"
     CAN_REVIEW_WIKI_CHANGES = "can_review_wiki_changes"

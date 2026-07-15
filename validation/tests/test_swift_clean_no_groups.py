@@ -26,13 +26,11 @@ relations.
 Cross-repo note (Part C relocation): this file moved here from
 `fred-deployment-factory/validation/tests/` along with the rest of `validation/`,
 but the files it guards (the realm-import templates, the OpenFGA model) still
-live IN `fred-deployment-factory`, not in this `fred` checkout - unlike
-`factory_config.py`'s fixture path, that ownership genuinely did not move.
-REPO_ROOT below therefore still resolves cross-repo, to the fresh
-`fdp/fred-deployment-factory` checkout used by the clean factory line
-(override via FRED_DEPLOYMENT_FACTORY_SRC). This is a deliberate, narrow
-exception to "no more cross-repo path assumptions" for validation/ - flagged
-for the developer, not silently papered over.
+live in the current `fred-deployment-factory` checkout, not in this Fred
+checkout. Resolve that checkout with FRED_DEPLOYMENT_FACTORY_SRC, a normal
+sibling layout, or Marc's current `fdp/fred-deployment-factory` workspace
+layout. If none is present, skip this module with guidance instead of failing
+standalone Fred validation.
 """
 
 from __future__ import annotations
@@ -43,19 +41,47 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(
-    os.getenv(
-        "FRED_DEPLOYMENT_FACTORY_SRC",
-        str(Path(__file__).resolve().parents[3] / "fdp" / "fred-deployment-factory"),
-    )
+FRED_ROOT = Path(__file__).resolve().parents[2]
+REQUIRED_FACTORY_RELATIVE_PATHS = (
+    Path("docker/keycloak/app-realm.json.template"),
+    Path("k3d/files/keycloak/app-realm.json.template"),
+    Path("docker/openfga/openfga-model.json"),
+    Path("k3d/files/openfga/openfga-model.json"),
 )
 
-if not REPO_ROOT.is_dir():
+
+def _is_current_factory_checkout(path: Path) -> bool:
+    return path.is_dir() and all((path / relative_path).is_file() for relative_path in REQUIRED_FACTORY_RELATIVE_PATHS)
+
+
+def _resolve_deployment_factory_root(
+    *,
+    env: dict[str, str] | None = None,
+    fred_parent: Path | None = None,
+) -> Path | None:
+    """Find the optional current deployment-factory checkout for static guards."""
+    env = env if env is not None else os.environ
+    if configured := env.get("FRED_DEPLOYMENT_FACTORY_SRC"):
+        return Path(configured)
+
+    parent = fred_parent if fred_parent is not None else FRED_ROOT.parent
+    for candidate in (
+        parent / "fred-deployment-factory",
+        parent / "fdp" / "fred-deployment-factory",
+    ):
+        if _is_current_factory_checkout(candidate):
+            return candidate
+    return None
+
+
+REPO_ROOT = _resolve_deployment_factory_root()
+
+if REPO_ROOT is None:
     pytest.skip(
-        f"fred-deployment-factory checkout not found at {REPO_ROOT!s} - these guards check "
-        "realm-import/OpenFGA-model files owned by that repo, not this one. Set "
-        "FRED_DEPLOYMENT_FACTORY_SRC to your checkout's path if it isn't a sibling of this "
-        "`fred` checkout.",
+        "current fred-deployment-factory checkout not found. These guards check realm-import/"
+        "OpenFGA-model files owned by that repo, not this one. Set "
+        "FRED_DEPLOYMENT_FACTORY_SRC=/absolute/path/to/fred-deployment-factory, place the "
+        "checkout beside Fred, or use the supported fdp/fred-deployment-factory workspace layout.",
         allow_module_level=True,
     )
 
@@ -79,6 +105,53 @@ GROUP_SCOPED_SERVICE_ACCOUNTS = (
 def _load(path: Path) -> dict:
     assert path.is_file(), f"{path} not found"
     return json.loads(path.read_text())
+
+
+def test_deployment_factory_resolver_prefers_explicit_env_path(tmp_path: Path) -> None:
+    explicit = tmp_path / "custom-factory"
+    sibling = tmp_path / "fred-deployment-factory"
+    _write_minimal_factory_files(sibling)
+
+    resolved = _resolve_deployment_factory_root(
+        env={"FRED_DEPLOYMENT_FACTORY_SRC": str(explicit)},
+        fred_parent=tmp_path,
+    )
+
+    assert resolved == explicit
+
+
+def test_deployment_factory_resolver_accepts_normal_sibling_path(tmp_path: Path) -> None:
+    sibling = tmp_path / "fred-deployment-factory"
+    _write_minimal_factory_files(sibling)
+
+    assert _resolve_deployment_factory_root(env={}, fred_parent=tmp_path) == sibling
+
+
+def test_deployment_factory_resolver_accepts_fdp_fallback_path(tmp_path: Path) -> None:
+    fdp_factory = tmp_path / "fdp" / "fred-deployment-factory"
+    _write_minimal_factory_files(fdp_factory)
+
+    assert _resolve_deployment_factory_root(env={}, fred_parent=tmp_path) == fdp_factory
+
+
+def test_deployment_factory_resolver_skips_stale_sibling_for_fdp_fallback(tmp_path: Path) -> None:
+    stale_sibling = tmp_path / "fred-deployment-factory"
+    stale_sibling.mkdir()
+    fdp_factory = tmp_path / "fdp" / "fred-deployment-factory"
+    _write_minimal_factory_files(fdp_factory)
+
+    assert _resolve_deployment_factory_root(env={}, fred_parent=tmp_path) == fdp_factory
+
+
+def test_deployment_factory_resolver_returns_none_when_checkout_is_absent(tmp_path: Path) -> None:
+    assert _resolve_deployment_factory_root(env={}, fred_parent=tmp_path) is None
+
+
+def _write_minimal_factory_files(root: Path) -> None:
+    for relative_path in REQUIRED_FACTORY_RELATIVE_PATHS:
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
 
 
 @pytest.mark.parametrize("template_path", SWIFT_REALM_TEMPLATES, ids=lambda p: p.name)

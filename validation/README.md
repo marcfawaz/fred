@@ -147,6 +147,8 @@ for this harness.
 | `WIKI_BASE_URL` | `http://localhost:8030` | AI Wiki backend base for the opt-in live AI Wiki authorization scenario. |
 | `RUN_AI_WIKI_AUTHZ_LIVE` | unset | Set to `1` with `AUTHORIZATION_MODE=openfga` to run the AI Wiki black-box scenario. |
 | `AUTHORIZATION_MODE` | unset | Must be `openfga` for the opt-in live AI Wiki authorization scenario. |
+| `FRED_AI_WIKI_SRC` | unset | Optional absolute path to `fred-knowledge-wiki`; enables cross-repo AI Wiki contract drift checks when the checkout is not a normal sibling. |
+| `FRED_DEPLOYMENT_FACTORY_SRC` | auto-detected | Optional absolute path to the current `fred-deployment-factory`; used by static factory guards when neither sibling nor `fdp/` workspace layouts apply. |
 
 ## The complete-matrix demo users
 
@@ -213,9 +215,26 @@ Expected AI Wiki capability behavior on `fredlab`:
 
 The live scenario and the standalone AI Wiki campaign share
 `ai_wiki_authz_campaign_contract.json` semantics. Offline validation unit tests
-assert that the Fred copy stays byte-for-byte synchronized with the sibling
-`fred-knowledge-wiki/scripts/ai_wiki_authz_campaign_contract.json` contract when
-that checkout is present.
+assert that the Fred copy stays byte-for-byte synchronized with
+`fred-knowledge-wiki/scripts/ai_wiki_authz_campaign_contract.json` when that
+checkout is present or explicitly configured through `FRED_AI_WIKI_SRC`. Normal
+offline Fred validation does not require an AI Wiki checkout; only the
+cross-repository drift comparison skips when no checkout can be found.
+
+Authoritative retained live evidence command:
+
+```bash
+cd /Users/marc/Documents/fred-workspace/fred-wiki/validation
+
+RUN_AI_WIKI_AUTHZ_LIVE=1 \
+AUTHORIZATION_MODE=openfga \
+WIKI_BASE_URL=http://localhost:8030 \
+make validation-report
+```
+
+The live scenario verifies already imported Fred demo personas from
+`demo_provisioning/users.json`; it never provisions those users, teams, OpenFGA
+tuples, or direct AI Wiki capability grants.
 
 ## Run
 
