@@ -43,6 +43,10 @@ not require a collaborative-team relation. The iframe may run in a separate
 pod, but the current `fred-local-storage` bridge requires `/ai-wikis` and
 `/wiki/v1` to be exposed through the same public origin as Fred; do not add a
 bearer-token `postMessage` bridge.
+Protocol-relative AI Wiki frontend URLs such as `//wiki.example/ai-wikis`,
+malformed values, and absolute URLs on another origin are rejected fail-closed
+before rendering the iframe. Root-relative `/ai-wikis` and absolute URLs with
+the same normalized origin remain supported.
 
 ## Route guards
 

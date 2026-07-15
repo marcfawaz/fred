@@ -8,10 +8,12 @@ import AiWikisPage, {
   buildFredThemeMessage,
   getAiWikisTargetOrigin,
   normalizeFredLanguage,
+  resolveAiWikisFrontendUrl,
   validateAiWikisFrontendSameOrigin,
 } from "./AiWikisPage";
 
 let currentLanguage = "en";
+let aiWikisFrontendUrl = "/ai-wikis";
 let canReadWikis = true;
 let selectedTeam: { id: string; permissions?: string[] } | undefined = {
   id: "team-42",
@@ -30,7 +32,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("../../../../common/config", () => ({
   getProperty: vi.fn((key: string) => {
     if (key === "aiWikisFrontendUrl") {
-      return "/ai-wikis";
+      return aiWikisFrontendUrl;
     }
     return "";
   }),
@@ -72,6 +74,7 @@ function renderAt(path: string) {
 describe("AiWikisPage", () => {
   beforeEach(() => {
     currentLanguage = "en";
+    aiWikisFrontendUrl = "/ai-wikis";
     canReadWikis = true;
     selectedTeam = { id: "team-42", permissions: ["can_read_wikis"] };
     isPersonalTeam = false;
@@ -152,18 +155,48 @@ describe("AiWikisPage", () => {
     expect(getAiWikisTargetOrigin("/ai-wikis", "http://localhost:5173")).toBe("http://localhost:5173");
   });
 
-  it("returns external origin for absolute iframe urls", () => {
+  it("does not use an unsafe target origin for rejected absolute iframe urls", () => {
     expect(getAiWikisTargetOrigin("https://wiki.example.test/ai-wikis", "http://localhost:5173")).toBe(
-      "https://wiki.example.test",
+      "http://localhost:5173",
     );
   });
 
   it("validates aiWikisFrontendUrl same-origin compatibility", () => {
     expect(validateAiWikisFrontendSameOrigin("/ai-wikis", "https://fred.example")).toBeNull();
     expect(validateAiWikisFrontendSameOrigin("https://fred.example/ai-wikis", "https://fred.example")).toBeNull();
+    expect(validateAiWikisFrontendSameOrigin("//wiki.example/ai-wikis", "https://fred.example")).toContain(
+      "same public origin",
+    );
     expect(validateAiWikisFrontendSameOrigin("https://wiki.example/ai-wikis", "https://fred.example")).toContain(
       "same public origin",
     );
+    expect(validateAiWikisFrontendSameOrigin("not-a-url", "https://fred.example")).toContain("same public origin");
+  });
+
+  it("centralizes aiWikisFrontendUrl parsing behavior", () => {
+    expect(resolveAiWikisFrontendUrl("/ai-wikis", "https://fred.example")).toMatchObject({
+      valid: true,
+      frontendUrl: "/ai-wikis",
+      targetOrigin: "https://fred.example",
+    });
+    expect(resolveAiWikisFrontendUrl("https://fred.example/ai-wikis", "https://fred.example")).toMatchObject({
+      valid: true,
+      frontendUrl: "https://fred.example/ai-wikis",
+      targetOrigin: "https://fred.example",
+    });
+    expect(resolveAiWikisFrontendUrl("//wiki.example/ai-wikis", "https://fred.example")).toMatchObject({
+      valid: false,
+      frontendUrl: "",
+      targetOrigin: "https://fred.example",
+    });
+  });
+
+  it("renders a configuration error and no iframe for invalid frontend URL values", () => {
+    aiWikisFrontendUrl = "//wiki.example/ai-wikis";
+    const html = renderAt("/team/team-42/wikis");
+
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("same public origin");
   });
 
   it("builds the fred theme message payload", () => {

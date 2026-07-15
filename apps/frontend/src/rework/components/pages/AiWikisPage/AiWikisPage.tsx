@@ -30,6 +30,10 @@ function normalizeFrontendUrl(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
+export type AiWikisFrontendUrlResolution =
+  | { valid: true; frontendUrl: string; targetOrigin: string; error?: undefined }
+  | { valid: false; frontendUrl: ""; targetOrigin: string; error: string };
+
 function encodePathSegments(path: string | undefined): string {
   if (!path) {
     return "";
@@ -75,21 +79,36 @@ export function buildFredLanguageMessage(language: FredLanguage): FredLanguageMe
 }
 
 export function getAiWikisTargetOrigin(aiWikisFrontendUrl: string, currentOrigin: string): string {
-  if (!aiWikisFrontendUrl || aiWikisFrontendUrl.startsWith("/")) {
-    return currentOrigin;
+  return resolveAiWikisFrontendUrl(aiWikisFrontendUrl, currentOrigin).targetOrigin;
+}
+
+export function resolveAiWikisFrontendUrl(
+  aiWikisFrontendUrl: string,
+  currentOrigin: string,
+): AiWikisFrontendUrlResolution {
+  const value = aiWikisFrontendUrl || "/ai-wikis";
+  const error =
+    "AI Wikis must be exposed through the same public origin as Fred when using the fred-local-storage token bridge.";
+  if (value.startsWith("//")) {
+    return { valid: false, frontendUrl: "", targetOrigin: currentOrigin, error };
   }
-  return new URL(aiWikisFrontendUrl).origin;
+  if (value.startsWith("/")) {
+    return { valid: true, frontendUrl: normalizeFrontendUrl(value), targetOrigin: currentOrigin };
+  }
+  try {
+    const target = new URL(value);
+    if (target.origin !== currentOrigin) {
+      return { valid: false, frontendUrl: "", targetOrigin: currentOrigin, error };
+    }
+    return { valid: true, frontendUrl: normalizeFrontendUrl(target.toString()), targetOrigin: target.origin };
+  } catch {
+    return { valid: false, frontendUrl: "", targetOrigin: currentOrigin, error };
+  }
 }
 
 export function validateAiWikisFrontendSameOrigin(aiWikisFrontendUrl: string, currentOrigin: string): string | null {
-  if (!aiWikisFrontendUrl || aiWikisFrontendUrl.startsWith("/")) {
-    return null;
-  }
-  const target = new URL(aiWikisFrontendUrl, currentOrigin);
-  if (target.origin === currentOrigin) {
-    return null;
-  }
-  return "AI Wikis must be exposed through the same public origin as Fred when using the fred-local-storage token bridge.";
+  const resolved = resolveAiWikisFrontendUrl(aiWikisFrontendUrl, currentOrigin);
+  return resolved.valid ? null : resolved.error;
 }
 
 export function buildAiWikisIframeSrc({
@@ -109,7 +128,14 @@ export function buildAiWikisIframeSrc({
   darkMode: boolean;
   language: FredLanguage;
 }) {
-  const baseUrl = normalizeFrontendUrl(aiWikisFrontendUrl || "/ai-wikis");
+  const resolved = resolveAiWikisFrontendUrl(
+    aiWikisFrontendUrl || "/ai-wikis",
+    globalThis.location?.origin ?? "http://localhost",
+  );
+  if (!resolved.valid) {
+    return "";
+  }
+  const baseUrl = resolved.frontendUrl;
   const encodedTeamId = encodeURIComponent(teamId);
   const encodedSplatPath = encodePathSegments(splatPath);
   const params = new URLSearchParams(search ?? "");
@@ -134,7 +160,11 @@ export default function AiWikisPage() {
   const { canReadWikis } = useTeamCapabilities(selectedTeam);
   const isPersonalAiWikisRoute = isPersonalTeam || teamId === "personal" || isPersonalTeamId(teamId);
   const currentOrigin = globalThis.location?.origin ?? "http://localhost";
-  const sameOriginConfigurationError = validateAiWikisFrontendSameOrigin(aiWikisFrontendUrl, currentOrigin);
+  const resolvedAiWikisFrontendUrl = useMemo(
+    () => resolveAiWikisFrontendUrl(aiWikisFrontendUrl, currentOrigin),
+    [aiWikisFrontendUrl, currentOrigin],
+  );
+  const sameOriginConfigurationError = resolvedAiWikisFrontendUrl.valid ? null : resolvedAiWikisFrontendUrl.error;
   const language = useMemo(() => normalizeFredLanguage(i18n.language), [i18n.language]);
   const themeMessage = useMemo(() => buildFredThemeMessage(themeMode, darkMode), [themeMode, darkMode]);
   const languageMessage = useMemo(() => buildFredLanguageMessage(language), [language]);
@@ -151,10 +181,7 @@ export default function AiWikisPage() {
       }),
     [aiWikisFrontendUrl, darkMode, language, location.search, splatPath, teamId, themeMode],
   );
-  const targetOrigin = useMemo(
-    () => getAiWikisTargetOrigin(aiWikisFrontendUrl, currentOrigin),
-    [aiWikisFrontendUrl, currentOrigin],
-  );
+  const targetOrigin = resolvedAiWikisFrontendUrl.targetOrigin;
 
   const postThemeMessage = useCallback(() => {
     iframeRef.current?.contentWindow?.postMessage(themeMessage, targetOrigin);
