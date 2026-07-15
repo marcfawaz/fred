@@ -19,6 +19,9 @@ import { useLocation, useParams } from "react-router-dom";
 import { ApplicationContext } from "../../../../app/ApplicationContextProvider";
 import type { ThemeMode } from "../../../../app/ApplicationContextStruct";
 import { getProperty } from "../../../../common/config";
+import { useSelectedTeam } from "../../../../hooks/useSelectedTeam";
+import { useTeamCapabilities } from "../../../core/hooks/useTeamCapabilities";
+import { isPersonalTeamId } from "@shared/utils/teamId";
 
 function normalizeFrontendUrl(url: string): string {
   if (!url || url === "/") {
@@ -78,6 +81,17 @@ export function getAiWikisTargetOrigin(aiWikisFrontendUrl: string, currentOrigin
   return new URL(aiWikisFrontendUrl).origin;
 }
 
+export function validateAiWikisFrontendSameOrigin(aiWikisFrontendUrl: string, currentOrigin: string): string | null {
+  if (!aiWikisFrontendUrl || aiWikisFrontendUrl.startsWith("/")) {
+    return null;
+  }
+  const target = new URL(aiWikisFrontendUrl, currentOrigin);
+  if (target.origin === currentOrigin) {
+    return null;
+  }
+  return "AI Wikis must be exposed through the same public origin as Fred when using the fred-local-storage token bridge.";
+}
+
 export function buildAiWikisIframeSrc({
   aiWikisFrontendUrl,
   teamId,
@@ -116,6 +130,11 @@ export default function AiWikisPage() {
   const { themeMode, darkMode } = useContext(ApplicationContext);
   const { i18n } = useTranslation();
   const aiWikisFrontendUrl = getProperty("aiWikisFrontendUrl") || "/ai-wikis";
+  const { selectedTeam, isPersonalTeam } = useSelectedTeam();
+  const { canReadWikis } = useTeamCapabilities(selectedTeam);
+  const isPersonalAiWikisRoute = isPersonalTeam || teamId === "personal" || isPersonalTeamId(teamId);
+  const currentOrigin = globalThis.location?.origin ?? "http://localhost";
+  const sameOriginConfigurationError = validateAiWikisFrontendSameOrigin(aiWikisFrontendUrl, currentOrigin);
   const language = useMemo(() => normalizeFredLanguage(i18n.language), [i18n.language]);
   const themeMessage = useMemo(() => buildFredThemeMessage(themeMode, darkMode), [themeMode, darkMode]);
   const languageMessage = useMemo(() => buildFredLanguageMessage(language), [language]);
@@ -133,8 +152,8 @@ export default function AiWikisPage() {
     [aiWikisFrontendUrl, darkMode, language, location.search, splatPath, teamId, themeMode],
   );
   const targetOrigin = useMemo(
-    () => getAiWikisTargetOrigin(aiWikisFrontendUrl, globalThis.location?.origin ?? "http://localhost"),
-    [aiWikisFrontendUrl],
+    () => getAiWikisTargetOrigin(aiWikisFrontendUrl, currentOrigin),
+    [aiWikisFrontendUrl, currentOrigin],
   );
 
   const postThemeMessage = useCallback(() => {
@@ -149,6 +168,22 @@ export default function AiWikisPage() {
     postThemeMessage();
     postLanguageMessage();
   }, [postLanguageMessage, postThemeMessage]);
+
+  if (sameOriginConfigurationError) {
+    return (
+      <Box role="alert" sx={{ p: 3 }}>
+        {sameOriginConfigurationError}
+      </Box>
+    );
+  }
+
+  if (!isPersonalAiWikisRoute && !canReadWikis) {
+    return (
+      <Box role="alert" sx={{ p: 3 }}>
+        AI Wikis are not available for this team.
+      </Box>
+    );
+  }
 
   return (
     <Box

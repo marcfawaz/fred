@@ -39,13 +39,25 @@ import { FeatureFlagKey, isFeatureEnabled } from "../../../../../../common/confi
  *
  * Mount inside the main sidebar layout for routes under `/team/:teamId/...`
  */
+export function shouldShowAiWikisNavigation({
+  isAiWikisEnabled,
+  isPersonalTeam,
+  canReadWikis,
+}: {
+  isAiWikisEnabled: boolean;
+  isPersonalTeam: boolean;
+  canReadWikis: boolean;
+}) {
+  return isAiWikisEnabled && (isPersonalTeam || canReadWikis);
+}
+
 export default function TeamContentNavbar() {
   const { agentIconName, agentsNicknamePlural } = useFrontendProperties();
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { teamId, isPersonalTeam, selectedTeam, canOpenTeamSettings, bannerColor, bannerStyle } = useSelectedTeam();
-  const { canUpdateAgents, canReadMembers } = useTeamCapabilities(selectedTeam);
+  const { canUpdateAgents, canReadMembers, canReadWikis } = useTeamCapabilities(selectedTeam);
 
   const settingsBase = `/team/${teamId}/settings`;
   const inSettings = !!teamId && pathname.startsWith(settingsBase);
@@ -78,7 +90,7 @@ export default function TeamContentNavbar() {
       icon: { category: "outlined", type: "edit_note", filled: true },
       linkProps: { to: `/team/${teamId}/prompts` },
     },
-    ...(isAiWikisEnabled
+    ...(shouldShowAiWikisNavigation({ isAiWikisEnabled, isPersonalTeam, canReadWikis })
       ? [
           {
             type: "link" as const,

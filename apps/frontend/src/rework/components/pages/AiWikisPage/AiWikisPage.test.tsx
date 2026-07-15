@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationContext } from "../../../../app/ApplicationContextProvider";
 import AiWikisPage, {
   buildAiWikisIframeSrc,
@@ -8,9 +8,16 @@ import AiWikisPage, {
   buildFredThemeMessage,
   getAiWikisTargetOrigin,
   normalizeFredLanguage,
+  validateAiWikisFrontendSameOrigin,
 } from "./AiWikisPage";
 
 let currentLanguage = "en";
+let canReadWikis = true;
+let selectedTeam: { id: string; permissions?: string[] } | undefined = {
+  id: "team-42",
+  permissions: ["can_read_wikis"],
+};
+let isPersonalTeam = false;
 
 vi.mock("react-i18next", () => ({
   useTranslation: vi.fn(() => ({
@@ -27,6 +34,19 @@ vi.mock("../../../../common/config", () => ({
     }
     return "";
   }),
+}));
+
+vi.mock("../../../../hooks/useSelectedTeam", () => ({
+  useSelectedTeam: vi.fn(() => ({
+    selectedTeam,
+    isPersonalTeam,
+  })),
+}));
+
+vi.mock("../../../core/hooks/useTeamCapabilities", () => ({
+  useTeamCapabilities: vi.fn(() => ({
+    canReadWikis,
+  })),
 }));
 
 function renderAt(path: string) {
@@ -50,6 +70,13 @@ function renderAt(path: string) {
 }
 
 describe("AiWikisPage", () => {
+  beforeEach(() => {
+    currentLanguage = "en";
+    canReadWikis = true;
+    selectedTeam = { id: "team-42", permissions: ["can_read_wikis"] };
+    isPersonalTeam = false;
+  });
+
   it("normalizes Fred language values", () => {
     expect(normalizeFredLanguage("fr-FR")).toBe("fr");
     expect(normalizeFredLanguage("en-US")).toBe("en");
@@ -57,11 +84,38 @@ describe("AiWikisPage", () => {
   });
 
   it("renders an iframe for the team root route", () => {
-    currentLanguage = "en";
     const html = renderAt("/team/team-42/wikis");
     expect(html).toContain("<iframe");
     expect(html).toContain('title="AI Wikis"');
     expect(html).toContain('src="/ai-wikis/embed/team/team-42?theme=dark&amp;themeMode=dark&amp;lng=en"');
+  });
+
+  it("does not render the iframe for a collaborative team without canReadWikis", () => {
+    canReadWikis = false;
+    selectedTeam = { id: "team-42", permissions: [] };
+    const html = renderAt("/team/team-42/wikis");
+
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("AI Wikis are not available for this team.");
+  });
+
+  it("fails closed while collaborative team permissions are unresolved", () => {
+    canReadWikis = false;
+    selectedTeam = undefined;
+    const html = renderAt("/team/team-42/wikis");
+
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("AI Wikis are not available for this team.");
+  });
+
+  it("preserves personal AI Wikis access without collaborative canReadWikis", () => {
+    canReadWikis = false;
+    selectedTeam = undefined;
+    isPersonalTeam = true;
+    const html = renderAt("/team/personal/wikis");
+
+    expect(html).toContain("<iframe");
+    expect(html).toContain('src="/ai-wikis/embed/team/personal?theme=dark&amp;themeMode=dark&amp;lng=en"');
   });
 
   it("preserves the nested wiki subpath and query string", () => {
@@ -101,6 +155,14 @@ describe("AiWikisPage", () => {
   it("returns external origin for absolute iframe urls", () => {
     expect(getAiWikisTargetOrigin("https://wiki.example.test/ai-wikis", "http://localhost:5173")).toBe(
       "https://wiki.example.test",
+    );
+  });
+
+  it("validates aiWikisFrontendUrl same-origin compatibility", () => {
+    expect(validateAiWikisFrontendSameOrigin("/ai-wikis", "https://fred.example")).toBeNull();
+    expect(validateAiWikisFrontendSameOrigin("https://fred.example/ai-wikis", "https://fred.example")).toBeNull();
+    expect(validateAiWikisFrontendSameOrigin("https://wiki.example/ai-wikis", "https://fred.example")).toContain(
+      "same public origin",
     );
   });
 

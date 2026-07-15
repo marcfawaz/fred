@@ -31,9 +31,18 @@ team-level; `/admin/*` and platform-wide dashboards are org-level.
 
 `useTeamCapabilities` takes the `TeamWithPermissions` object you already have
 in scope (from `useGetTeamQuery`, `useSelectedTeam`, or a prop) — it does not
-fetch anything itself. There is no team-scoped route guard today: every
-`/team/:teamId/...` route renders unconditionally, and team-level gating
-happens *inside* the page (hide/disable a button, not redirect the route).
+fetch anything itself. Most `/team/:teamId/...` routes render unconditionally,
+and team-level gating happens *inside* the page (hide/disable a button, not
+redirect the route).
+
+AI Wikis is the current narrow exception. The sidebar entry and direct
+collaborative-team iframe route require resolved `canReadWikis`; loading,
+failed, or denied permissions fail closed and do not render the iframe.
+Personal AI Wikis remains available under the personal owner model and does
+not require a collaborative-team relation. The iframe may run in a separate
+pod, but the current `fred-local-storage` bridge requires `/ai-wikis` and
+`/wiki/v1` to be exposed through the same public origin as Fred; do not add a
+bearer-token `postMessage` bridge.
 
 ## Route guards
 
@@ -96,7 +105,7 @@ to check, instead of grepping the repo:
 | Layer                              | Proves                                                          | File                                                                                                                     |
 | ----------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Pure mapping logic                 | Every `TeamPermission` turns on exactly its own flag, nothing else | `apps/frontend/src/rework/core/hooks/teamCapabilities.test.ts`                                                          |
-| Guard decision logic               | `admin`/`observer` requirement resolves correctly                 | `apps/frontend/src/components/Protected.test.ts`                                                                        |
+| Guard decision logic               | `admin`/`observer` and AI Wikis `canReadWikis` requirements resolve correctly | `apps/frontend/src/components/Protected.test.ts`, `apps/frontend/src/rework/components/shared/layouts/Sidebar/TeamContentNavbar/TeamContentNavbar.test.ts`, `apps/frontend/src/rework/components/pages/AiWikisPage/AiWikisPage.test.tsx` |
 | Backend derivation (unit)          | `is_platform_admin`/`is_platform_observer` come from OpenFGA, not Keycloak | `apps/control-plane-backend/tests/test_main.py::test_frontend_bootstrap_permission_summary_derives_platform_admin_from_rebac` |
 | Live, self-service, in-browser      | Isolation (registry/users/foreign-team access match the account's own flags) **and** a real team-scoped write (create+delete a prompt) match the account's own `can_update_resources` — for the running admin or any other account (`/admin/self-test`, "Test another profile") | `apps/frontend/src/rework/features/pipeline/scenarios/authzProbeScenario.ts` + `useAuthzProbeRun.ts` (deps), unit-tested in `authzProbeScenario.test.ts` |
 | Live, black-box, real running stack | The whole chain end-to-end, real JWT + real OpenFGA               | `fred-deployment-factory/validation/scenarios/test_platform_admin_capabilities.py`, `test_team_registry_authz.py`, `test_prompt_authz.py` |
