@@ -1,0 +1,206 @@
+{
+  "version": "AUTHZ-WIKI-07D",
+  "team_name": "fredlab",
+  "capabilities": [
+    "can_read_wikis",
+    "can_contribute_wikis",
+    "can_review_wiki_changes",
+    "can_manage_wiki_schema",
+    "can_manage_wiki_lifecycle",
+    "can_manage_wiki_governance",
+    "can_use_wiki_review_assistant",
+    "can_run_wiki_guarded_auto_apply",
+    "can_run_wiki_autonomous_apply"
+  ],
+  "persona_classes": {
+    "legacy_team_member": ["marc", "bob", "elena", "zoe", "priya"],
+    "legacy_non_member": ["alice", "gabriel", "oscar"]
+  },
+  "personas": {
+    "marc": [
+      "can_read_wikis",
+      "can_review_wiki_changes",
+      "can_manage_wiki_schema",
+      "can_manage_wiki_lifecycle",
+      "can_manage_wiki_governance",
+      "can_use_wiki_review_assistant",
+      "can_run_wiki_guarded_auto_apply",
+      "can_run_wiki_autonomous_apply"
+    ],
+    "bob": [
+      "can_read_wikis",
+      "can_contribute_wikis"
+    ],
+    "elena": [
+      "can_read_wikis"
+    ],
+    "zoe": [
+      "can_read_wikis"
+    ],
+    "priya": [
+      "can_read_wikis",
+      "can_contribute_wikis",
+      "can_review_wiki_changes",
+      "can_manage_wiki_schema",
+      "can_manage_wiki_lifecycle",
+      "can_manage_wiki_governance",
+      "can_use_wiki_review_assistant",
+      "can_run_wiki_guarded_auto_apply",
+      "can_run_wiki_autonomous_apply"
+    ],
+    "alice": [],
+    "gabriel": [],
+    "oscar": []
+  },
+  "defaults": {
+    "accepted_authorized_statuses": [200],
+    "accepted_denied_statuses": [403, 404],
+    "accepted_business_statuses": [],
+    "cleanup_resource_types_produced": []
+  },
+  "endpoints": [
+    {
+      "key": "read_list",
+      "method": "GET",
+      "path": "/wiki/v1/wikis?scope_type=team&team_id={team_id}",
+      "capability": "can_read_wikis",
+      "mutating": false,
+      "allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "denied": ["alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"]
+    },
+    {
+      "key": "read_pages",
+      "method": "GET",
+      "path": "/wiki/v1/wikis/{wiki_id}/pages",
+      "capability": "can_read_wikis",
+      "mutating": false,
+      "allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "denied": ["alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"]
+    },
+    {
+      "key": "contribution_capability_assertion",
+      "method": "GET",
+      "path": "/wiki/v1/teams/{team_id}/permissions/can_contribute_wikis",
+      "capability": "can_contribute_wikis",
+      "mutating": false,
+      "allowed": ["bob", "priya"],
+      "denied": ["marc", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "notes": "non-mutating probe proves team_admin does not imply team_editor under direct OpenFGA"
+    },
+    {
+      "key": "review_collection",
+      "method": "GET",
+      "path": "/wiki/v1/wikis/{wiki_id}/merge-proposals",
+      "capability": "can_review_wiki_changes",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"]
+    },
+    {
+      "key": "schema_management_collection",
+      "method": "GET",
+      "path": "/wiki/v1/wikis/{wiki_id}/schema-proposals",
+      "capability": "can_manage_wiki_schema",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "notes": "active schema read is can_read_wikis and must not prove schema management"
+    },
+    {
+      "key": "lifecycle_update_disposable",
+      "method": "PATCH",
+      "path": "/wiki/v1/wikis/{wiki_id}",
+      "capability": "can_manage_wiki_lifecycle",
+      "mutating": true,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "cleanup_resource_types_produced": [],
+      "body": {"description": "{marker} lifecycle authorization probe"}
+    },
+    {
+      "key": "governance_get",
+      "method": "GET",
+      "path": "/wiki/v1/wikis/{wiki_id}/settings/governance/review-assistance",
+      "capability": "can_manage_wiki_governance",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"]
+    },
+    {
+      "key": "review_assistant",
+      "method": "POST",
+      "path": "/wiki/v1/wikis/{wiki_id}/review-agent/analyze-pending",
+      "capability": "can_use_wiki_review_assistant",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_business_statuses": [409],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "body": {},
+      "notes": "fresh disposable wikis default to manual_only; authorized personas may reach the documented 409 mode guard after capability authorization"
+    },
+    {
+      "key": "guarded_auto_apply",
+      "method": "POST",
+      "path": "/wiki/v1/wikis/{wiki_id}/review-agent/guarded-auto-apply",
+      "capability": "can_run_wiki_guarded_auto_apply",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_business_statuses": [409],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "notes": "fresh disposable wikis default to manual_only; authorized personas may reach the documented 409 guarded_auto_apply mode guard after capability authorization",
+      "body": {"kind": "all", "limit": 25, "reanalyze_existing": false, "dry_run": true}
+    },
+    {
+      "key": "autonomous_apply",
+      "method": "POST",
+      "path": "/wiki/v1/wikis/{wiki_id}/review-agent/autonomous-apply",
+      "capability": "can_run_wiki_autonomous_apply",
+      "mutating": false,
+      "allowed": ["marc", "priya"],
+      "denied": ["bob", "elena", "zoe", "alice", "gabriel", "oscar"],
+      "accepted_authorized_statuses": [200],
+      "accepted_business_statuses": [409],
+      "accepted_denied_statuses": [403, 404],
+      "shadow_legacy_expected_allowed": ["marc", "bob", "elena", "zoe", "priya"],
+      "shadow_legacy_expected_denied": ["alice", "gabriel", "oscar"],
+      "notes": "fresh disposable wikis default to manual_only; authorized personas may reach the documented 409 autonomous_apply mode guard after capability authorization",
+      "body": {"kind": "all", "limit": 25, "reanalyze_existing": false, "dry_run": true}
+    }
+  ]
+}

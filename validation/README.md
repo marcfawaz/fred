@@ -144,6 +144,9 @@ for this harness.
 | `FRED_TEST_TEAM` | `fredlab` | Collaborative team used for isolation checks |
 | `FRED_TEST_AGENT_ID` | `fred.github.test_assistant` | Public no-LLM agent used for deterministic runtime execution |
 | `FRED_KNOWLEDGE_FLOW_URL` | `http://localhost:8111/knowledge-flow/v1` | knowledge-flow-backend base, started manually like the other apps. Only required by `test_content_scope_bypass.py`; checked lazily, not at session start. |
+| `WIKI_BASE_URL` | `http://localhost:8030` | AI Wiki backend base for the opt-in live AI Wiki authorization scenario. |
+| `RUN_AI_WIKI_AUTHZ_LIVE` | unset | Set to `1` with `AUTHORIZATION_MODE=openfga` to run the AI Wiki black-box scenario. |
+| `AUTHORIZATION_MODE` | unset | Must be `openfga` for the opt-in live AI Wiki authorization scenario. |
 
 ## The complete-matrix demo users
 
@@ -178,18 +181,41 @@ scenarios that specifically needed them.
 ## Keeping the OpenFGA model in sync
 
 `docker/openfga/openfga-model.json` and `k3d/files/openfga/openfga-model.json`
-are **hand-maintained copies** owned by `fred-deployment-factory` (not `fred`,
-and not this `validation/` package since its relocation into the `fred`
-monorepo) - not generated from `fred-core` directly. On 2026-07-09 the Docker
-copy was found to have drifted significantly from `fred-core`'s actual
-`schema.fga` - missing most organization capabilities, missing
-`can_read_conversations`, and (fortunately, by omission) missing a live
-escalation bug that existed in `fred` at the time. On 2026-07-13 the Helm copy
-was found to have drifted too (`can_observe_platform`/`platform_observer` vs a
-stale `can_read_kpi_global`/`platform_admin` shape). Both are now synced and
-covered by a static guard - `make sync-openfga-model` /
-`make check-openfga-model-sync`, run from `fred-deployment-factory`'s own
-Makefile (see that repo's `Makefile` and `README.md`), not from here.
+are synchronized deployment copies owned by the pure-infrastructure
+`fred-deployment-factory` repository. Fred remains the canonical source through
+`libs/fred-core/fred_core/security/rebac/schema.fga.json`; the factory must carry
+zero human users, zero teams, and zero business tuples. After changing the Fred
+schema, run `make sync-openfga-model SWIFT_SRC=/path/to/fred` and
+`make check-openfga-model-sync SWIFT_SRC=/path/to/fred` from the fresh factory
+branch, then keep `make check-pure-infrastructure` green.
+
+## AI Wiki authorization scenario
+
+`scenarios/test_ai_wiki_authorization.py` is the authoritative Fred-owned
+black-box evidence scenario for AI Wiki team capability authorization. It is
+opt-in and skipped unless both `RUN_AI_WIKI_AUTHZ_LIVE=1` and
+`AUTHORIZATION_MODE=openfga` are set.
+
+The scenario uses real Keycloak tokens, keys identities by JWT `sub`, finds the
+live `fredlab` team through Fred APIs, creates one disposable team AI Wiki with
+an `authz-campaign-*` marker, runs the representative endpoint matrix, and
+cleans up the marked resource. It verifies personas from the same
+`demo_provisioning/users.json` fixture as the rest of validation; it never
+provisions users, teams, OpenFGA tuples, or direct AI Wiki capability grants.
+
+Expected AI Wiki capability behavior on `fredlab`:
+
+- `marc`: read plus review/schema/lifecycle/governance/assistant/guarded/autonomous; no contribution.
+- `bob`: read plus contribution.
+- `elena` and `zoe`: read only.
+- `priya`: all nine AI Wiki capabilities.
+- `alice`, `gabriel`, and `oscar`: no `fredlab` AI Wiki capabilities.
+
+The live scenario and the standalone AI Wiki campaign share
+`ai_wiki_authz_campaign_contract.json` semantics. Offline validation unit tests
+assert that the Fred copy stays byte-for-byte synchronized with the sibling
+`fred-knowledge-wiki/scripts/ai_wiki_authz_campaign_contract.json` contract when
+that checkout is present.
 
 ## Run
 

@@ -39,8 +39,6 @@ export default defineConfig({
       },
       "/wiki": process.env.VITE_BACKEND_URL_WIKI || "http://localhost:8030",
       "/samples": process.env.VITE_BACKEND_URL_SAMPLES || "http://localhost:8010",
-      "/dt": process.env.VITE_BACKEND_URL_DT_AGENTS || "http://localhost:8020",
-      "/synthia": process.env.VITE_BACKEND_URL_SYNTHIA || "http://localhost:8020",
     },
   },
   resolve: {

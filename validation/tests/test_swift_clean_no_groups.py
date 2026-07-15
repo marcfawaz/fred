@@ -28,10 +28,11 @@ Cross-repo note (Part C relocation): this file moved here from
 but the files it guards (the realm-import templates, the OpenFGA model) still
 live IN `fred-deployment-factory`, not in this `fred` checkout - unlike
 `factory_config.py`'s fixture path, that ownership genuinely did not move.
-REPO_ROOT below therefore still resolves cross-repo, to a sibling
-`fred-deployment-factory` checkout (override via FRED_DEPLOYMENT_FACTORY_SRC).
-This is a deliberate, narrow exception to "no more cross-repo path assumptions"
-for validation/ - flagged for the developer, not silently papered over.
+REPO_ROOT below therefore still resolves cross-repo, to the fresh
+`fdp/fred-deployment-factory` checkout used by the clean factory line
+(override via FRED_DEPLOYMENT_FACTORY_SRC). This is a deliberate, narrow
+exception to "no more cross-repo path assumptions" for validation/ - flagged
+for the developer, not silently papered over.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ import pytest
 REPO_ROOT = Path(
     os.getenv(
         "FRED_DEPLOYMENT_FACTORY_SRC",
-        str(Path(__file__).resolve().parents[3] / "fred-deployment-factory"),
+        str(Path(__file__).resolve().parents[3] / "fdp" / "fred-deployment-factory"),
     )
 )
 
