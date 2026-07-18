@@ -1443,11 +1443,12 @@ export type ScheduledAutomationDelegationRelation =
   | "wiki_autonomous_apply_runner";
 export type ScheduledAutomationDelegation = {
   type?: "service";
+  service_client_id: string;
   service_subject: string;
   relation: ScheduledAutomationDelegationRelation;
 };
 export type ScheduledAutomationDelegationRequest = {
-  service_subject: string;
+  service_client_id: string;
   relation: ScheduledAutomationDelegationRelation;
 };
 export type FrontendFeatureFlags = {

@@ -39,6 +39,14 @@ LifecycleRunner: TypeAlias = Callable[
     [LifecycleManagerInput],
     Awaitable[LifecycleManagerResult],
 ]
+ServiceAccountSubjectResolver: TypeAlias = Callable[
+    [str],
+    Awaitable[str | None],
+]
+
+
+async def _default_service_account_subject_resolver(_client_id: str) -> str | None:
+    return None
 
 
 @dataclass(slots=True)
@@ -70,6 +78,9 @@ class TeamServiceDependencies:
     get_policy_catalog: Callable[[], ConversationPolicyCatalog]
     get_users_by_ids: UserSummaryLookup
     run_lifecycle_manager_once_in_memory: LifecycleRunner
+    resolve_service_account_subject: ServiceAccountSubjectResolver = (
+        _default_service_account_subject_resolver
+    )
 
 
 def build_team_service_dependencies(
@@ -119,6 +130,15 @@ def build_team_service_dependencies(
 
         user_summary_lookup = _lookup_users_by_ids
 
+    user_deps = build_user_service_dependencies(container)
+
+    async def _resolve_service_account_subject(client_id: str) -> str | None:
+        from control_plane_backend.users.service import find_user_sub_by_username
+
+        return await find_user_sub_by_username(
+            f"service-account-{client_id}", user_deps
+        )
+
     if lifecycle_runner is None:
         lifecycle_deps = build_lifecycle_action_dependencies(container)
 
@@ -158,6 +178,7 @@ def build_team_service_dependencies(
         get_policy_catalog=container.get_policy_catalog,
         get_users_by_ids=user_summary_lookup,
         run_lifecycle_manager_once_in_memory=lifecycle_runner,
+        resolve_service_account_subject=_resolve_service_account_subject,
     )
 
 

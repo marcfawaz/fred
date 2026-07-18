@@ -184,26 +184,21 @@ class ScheduledAutomationDelegationRelation(str, Enum):
 
 class ScheduledAutomationDelegation(BaseModel):
     type: Literal["service"] = "service"
+    service_client_id: str
     service_subject: str
     relation: ScheduledAutomationDelegationRelation
 
 
 class ScheduledAutomationDelegationRequest(BaseModel):
-    service_subject: str = Field(min_length=1)
+    service_client_id: str = Field(min_length=1)
     relation: ScheduledAutomationDelegationRelation
 
-    @field_validator("service_subject")
+    @field_validator("service_client_id")
     @classmethod
-    def _validate_service_subject(cls, value: str) -> str:
+    def _validate_service_client_id(cls, value: str) -> str:
         normalized = value.strip()
-        if not normalized:
-            raise ValueError("service_subject must not be blank")
-        if normalized.startswith("service:"):
-            raise ValueError(
-                "service_subject must be the verified Keycloak service-account sub, not a synthetic service:<client_id> value"
-            )
-        if normalized == "*":
-            raise ValueError("wildcard service_subject is not allowed")
+        if normalized != "fred-ai-wiki-worker":
+            raise ValueError("service_client_id must be fred-ai-wiki-worker")
         return normalized
 
 

@@ -83,6 +83,7 @@ _BANNER_EXTENSION_BY_MIME = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+_AI_WIKI_WORKER_SERVICE_CLIENT_ID = "fred-ai-wiki-worker"
 
 
 def _utcnow() -> datetime:
@@ -1044,6 +1045,7 @@ async def list_scheduled_automation_delegations(
         for subject in sorted(subjects):
             delegations.append(
                 ScheduledAutomationDelegation(
+                    service_client_id=_AI_WIKI_WORKER_SERVICE_CLIENT_ID,
                     service_subject=subject,
                     relation=relation,
                 )
@@ -1058,6 +1060,10 @@ async def assign_scheduled_automation_delegation(
     deps: TeamServiceDependencies,
 ) -> None:
     rebac = deps.rebac
+    if is_service_agent(user):
+        raise PermissionError(
+            "Service identities cannot administer scheduled automation delegations"
+        )
     await _validate_team_and_check_permission(
         user,
         team_id,
@@ -1065,18 +1071,20 @@ async def assign_scheduled_automation_delegation(
         [TeamPermission.CAN_ADMINISTER_ADMINS],
         deps,
     )
+    service_subject = await _resolve_scheduled_automation_service_subject(request, deps)
     await rebac.add_relation(
         Relation(
-            subject=RebacReference(Resource.USER, request.service_subject),
+            subject=RebacReference(Resource.USER, service_subject),
             relation=request.relation.to_relation(),
             resource=RebacReference(Resource.TEAM, team_id),
         )
     )
     logger.info(
-        "Assigned scheduled AI Wiki automation delegation relation=%s team_id=%s service_subject=%s assigned_by=%s",
+        "Assigned scheduled AI Wiki automation delegation relation=%s team_id=%s service_client_id=%s service_subject=%s assigned_by=%s",
         request.relation.value,
         team_id,
-        request.service_subject,
+        request.service_client_id,
+        service_subject,
         user.uid,
     )
 
@@ -1088,6 +1096,10 @@ async def revoke_scheduled_automation_delegation(
     deps: TeamServiceDependencies,
 ) -> None:
     rebac = deps.rebac
+    if is_service_agent(user):
+        raise PermissionError(
+            "Service identities cannot administer scheduled automation delegations"
+        )
     await _validate_team_and_check_permission(
         user,
         team_id,
@@ -1095,22 +1107,38 @@ async def revoke_scheduled_automation_delegation(
         [TeamPermission.CAN_ADMINISTER_ADMINS],
         deps,
     )
+    service_subject = await _resolve_scheduled_automation_service_subject(request, deps)
     await rebac.delete_relations(
         [
             Relation(
-                subject=RebacReference(Resource.USER, request.service_subject),
+                subject=RebacReference(Resource.USER, service_subject),
                 relation=request.relation.to_relation(),
                 resource=RebacReference(Resource.TEAM, team_id),
             )
         ]
     )
     logger.info(
-        "Revoked scheduled AI Wiki automation delegation relation=%s team_id=%s service_subject=%s revoked_by=%s",
+        "Revoked scheduled AI Wiki automation delegation relation=%s team_id=%s service_client_id=%s service_subject=%s revoked_by=%s",
         request.relation.value,
         team_id,
-        request.service_subject,
+        request.service_client_id,
+        service_subject,
         user.uid,
     )
+
+
+async def _resolve_scheduled_automation_service_subject(
+    request: ScheduledAutomationDelegationRequest,
+    deps: TeamServiceDependencies,
+) -> str:
+    if request.service_client_id != _AI_WIKI_WORKER_SERVICE_CLIENT_ID:
+        raise ValueError("Unsupported scheduled automation service client")
+    service_subject = await deps.resolve_service_account_subject(
+        request.service_client_id
+    )
+    if not service_subject:
+        raise ValueError("Scheduled automation service account could not be resolved")
+    return service_subject
 
 
 async def _enrich_teams_with_membership(

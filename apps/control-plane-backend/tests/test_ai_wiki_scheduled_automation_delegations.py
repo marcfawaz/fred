@@ -71,8 +71,14 @@ class _FakeMetadataStore:
         return None
 
 
-def _deps(rebac: _FakeRebac) -> TeamServiceDependencies:
+def _deps(
+    rebac: _FakeRebac, *, service_subject: str | None = "service-account-sub"
+) -> TeamServiceDependencies:
     metadata = _FakeMetadataStore()
+
+    async def _resolve_service_subject(_client_id: str) -> str | None:
+        return service_subject
+
     return TeamServiceDependencies(
         configuration=SimpleNamespace(app=SimpleNamespace()),  # type: ignore[arg-type]
         rebac=rebac,  # type: ignore[arg-type]
@@ -84,6 +90,7 @@ def _deps(rebac: _FakeRebac) -> TeamServiceDependencies:
         get_policy_catalog=lambda: None,  # type: ignore[return-value]
         get_users_by_ids=lambda _ids: {},  # type: ignore[arg-type]
         run_lifecycle_manager_once_in_memory=lambda _input: None,  # type: ignore[arg-type]
+        resolve_service_account_subject=_resolve_service_subject,
     )
 
 
@@ -97,7 +104,7 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
 ):
     rebac = _FakeRebac()
     request = ScheduledAutomationDelegationRequest(
-        service_subject="service-account-sub",
+        service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
     )
 
@@ -117,6 +124,7 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
             ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
         )
     ]
+    assert listed[0].service_client_id == "fred-ai-wiki-worker"
     assert rebac.permission_checks[-1] == (
         "fredlab",
         (TeamPermission.CAN_ADMINISTER_ADMINS,),
@@ -141,7 +149,7 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
 async def test_scheduled_automation_delegation_is_team_scoped() -> None:
     rebac = _FakeRebac()
     request = ScheduledAutomationDelegationRequest(
-        service_subject="service-account-sub",
+        service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_GUARDED_AUTO_APPLY_RUNNER,
     )
 
@@ -160,7 +168,7 @@ async def test_scheduled_automation_delegation_is_team_scoped() -> None:
 @pytest.mark.asyncio
 async def test_scheduled_automation_delegation_requires_existing_team() -> None:
     request = ScheduledAutomationDelegationRequest(
-        service_subject="service-account-sub",
+        service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_AUTONOMOUS_APPLY_RUNNER,
     )
 
@@ -170,16 +178,32 @@ async def test_scheduled_automation_delegation_requires_existing_team() -> None:
         )
 
 
-def test_scheduled_automation_delegation_rejects_synthetic_or_wildcard_subjects() -> (
-    None
-):
+def test_scheduled_automation_delegation_rejects_unapproved_service_clients() -> None:
     with pytest.raises(ValidationError):
         ScheduledAutomationDelegationRequest(
-            service_subject="service:fred-ai-wiki-worker",
+            service_client_id="agentic",
             relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
         )
     with pytest.raises(ValidationError):
         ScheduledAutomationDelegationRequest(
-            service_subject="*",
+            service_client_id="human-user-sub",
             relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+        )
+
+
+@pytest.mark.asyncio
+async def test_scheduled_automation_delegation_requires_resolved_service_account() -> (
+    None
+):
+    request = ScheduledAutomationDelegationRequest(
+        service_client_id="fred-ai-wiki-worker",
+        relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+    )
+
+    with pytest.raises(ValueError):
+        await assign_scheduled_automation_delegation(
+            _admin(),
+            TeamId("fredlab"),
+            request,
+            _deps(_FakeRebac(), service_subject=None),
         )
