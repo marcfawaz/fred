@@ -11,6 +11,7 @@ from fastapi import UploadFile
 from fred_core import (
     ORGANIZATION_ID,
     SERVICE_AGENT_ALLOWED_TEAM_PERMISSIONS,
+    KeycloackDisabled,
     KeycloakUser,
     OrganizationPermission,
     RebacDisabledResult,
@@ -21,6 +22,7 @@ from fred_core import (
     Resource,
     SessionSchema,
     TeamPermission,
+    create_keycloak_admin,
     is_service_agent,
 )
 from fred_core.common import TeamId, is_personal_team_id
@@ -1036,7 +1038,9 @@ async def list_scheduled_automation_delegations(
         ]
     )
     delegations: list[ScheduledAutomationDelegation] = []
-    for relation, subjects in zip(ScheduledAutomationDelegationRelation, relation_subjects):
+    for relation, subjects in zip(
+        ScheduledAutomationDelegationRelation, relation_subjects
+    ):
         for subject in sorted(subjects):
             delegations.append(
                 ScheduledAutomationDelegation(
@@ -1273,6 +1277,46 @@ async def _get_team_users_by_relation(
     if isinstance(subjects, RebacDisabledResult):
         return set()
     return {subject.id for subject in subjects}
+
+
+async def count_all_collaborative_teams(deps: TeamServiceDependencies) -> int:
+    """Count every collaborative team in the organization, unfiltered by caller.
+
+    Why this exists: `list_teams` is caller-scoped — it filters to teams the user
+    holds `CAN_READ` on and folds in that user's own personal space. Admin
+    surfaces that need a platform-wide denominator (e.g. how many teams inherit a
+    default-on capability, RFC §8.5) must not use it, or they report a number
+    scoped to the admin's own memberships.
+
+    `team_metadata_store` rows are collaborative teams only (AUTHZ-05 review
+    item 9, RFC Part 6 §32, `list_all_teams_for_registry`): a personal space
+    never gets a row there, so no extra filtering is needed.
+    """
+
+    return len(await deps.get_team_metadata_store().list_all())
+
+
+async def count_all_personal_spaces(deps: TeamServiceDependencies) -> int:
+    """Count every personal space in the organization — i.e. the realm user count.
+
+    Personal spaces are virtual (one per user, `personal-<uid>`), so no roster of
+    them exists anywhere; the user directory IS the roster. Admin surfaces use
+    this as the denominator for personal-class capability access (RFC §8.4),
+    the personal-space sibling of `count_all_collaborative_teams` above.
+
+    The Keycloak admin client is built from `security.m2m` the same way the
+    users module wires it — team dependencies no longer carry a Keycloak
+    factory (AUTHZ-05 moved team data off Keycloak groups entirely).
+
+    Returns 0 when Keycloak is not configured — callers should treat that as
+    "unknown" rather than "no personal spaces".
+    """
+
+    admin = create_keycloak_admin(deps.configuration.security.m2m)
+    if isinstance(admin, KeycloackDisabled):
+        logger.info("Keycloak admin client not configured; user count unavailable.")
+        return 0
+    return int(await admin.a_users_count())
 
 
 def _detect_image_content_type(payload: bytes) -> str | None:

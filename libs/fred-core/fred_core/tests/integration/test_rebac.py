@@ -28,6 +28,7 @@ from pydantic import AnyHttpUrl, ValidationError
 from fred_core import (
     AgentPermission,
     AuthorizationError,
+    CapabilityPermission,
     DocumentPermission,
     OpenFgaRebacConfig,
     OpenFgaRebacEngine,
@@ -41,6 +42,7 @@ from fred_core import (
     TagPermission,
     TeamPermission,
 )
+from fred_core.security.rebac.rebac_engine import ORGANIZATION_ID
 from fred_core.security.structure import KeycloakUser, M2MSecurity
 
 MAX_STARTUP_ATTEMPTS = 40
@@ -1082,6 +1084,306 @@ async def test_team_filtering_by_visibility(
 #       "Organization admin should not see private teams without explicit team "
 #       f"relation, got: {admin_team_ids}"
 #   )
+
+
+# ---------------------------------------------------------------------------
+# Agent-capability team scoping (CAPAB-01 / #1980, RFC AGENT-CAPABILITY §8.1)
+# ---------------------------------------------------------------------------
+
+
+def _organization_ref() -> RebacReference:
+    return RebacReference(type=Resource.ORGANIZATION, id=ORGANIZATION_ID)
+
+
+def _org_team_edge(team: RebacReference) -> list[Relation]:
+    """Contextual `organization#team@team:<id>` reverse edge for team-subject
+    capability checks (never persisted — every team belongs to the org)."""
+
+    return [
+        Relation(subject=team, relation=RelationType.TEAM, resource=_organization_ref())
+    ]
+
+
+def _org_personal_team_edge(team: RebacReference) -> list[Relation]:
+    """Contextual reverse edges for a PERSONAL space: both the plain
+    `organization#team` edge and the personal-only `organization#personal_team`
+    edge the personal-space class relations resolve through (CAPAB-01 / #1961,
+    RFC §8.4). A regular team gets only the first."""
+
+    return _org_team_edge(team) + [
+        Relation(
+            subject=team,
+            relation=RelationType.PERSONAL_TEAM,
+            resource=_organization_ref(),
+        )
+    ]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_capability_can_use_tristate(rebac_engine: RebacEngine) -> None:
+    """`can_use` (TEAM subject) answers not-enabled / enabled / disabled."""
+
+    org = _organization_ref()
+    capability = _make_reference(Resource.CAPABILITY, prefix="cap")
+    team = _make_reference(Resource.TEAM, prefix="team")
+
+    token = await rebac_engine.add_relations(
+        [
+            Relation(
+                subject=org, relation=RelationType.ORGANIZATION, resource=capability
+            ),
+        ]
+    )
+
+    # (1) Not enabled anywhere → the team cannot use (admin-gated default).
+    assert not await rebac_engine.has_permission(
+        team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+
+    # (2) Explicit per-team enable → this team can use.
+    token = await rebac_engine.add_relation(
+        Relation(subject=team, relation=RelationType.ENABLED, resource=capability)
+    )
+    assert await rebac_engine.has_permission(
+        team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+
+    # (2b) The leak regression this shape fixes: ANOTHER team does not gain
+    # access from team's enablement, whoever the browsing user may be.
+    other_team = _make_reference(Resource.TEAM, prefix="other")
+    assert not await rebac_engine.has_permission(
+        other_team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(other_team),
+        consistency_token=token,
+    )
+
+    # (3) Disable overrides enable (opt-out wins).
+    token = await rebac_engine.add_relation(
+        Relation(subject=team, relation=RelationType.DISABLED, resource=capability)
+    )
+    assert not await rebac_engine.has_permission(
+        team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_capability_default_on_inherited(rebac_engine: RebacEngine) -> None:
+    """A default-on capability is usable by any team (via the contextual
+    `organization#team` edge), and a per-team `disabled` tuple opts that
+    team back out (tri-state: inherited-on)."""
+
+    org = _organization_ref()
+    capability = _make_reference(Resource.CAPABILITY, prefix="cap")
+    team = _make_reference(Resource.TEAM, prefix="team")
+
+    token = await rebac_engine.add_relations(
+        [
+            Relation(
+                subject=org, relation=RelationType.ORGANIZATION, resource=capability
+            ),
+            Relation(
+                subject=org, relation=RelationType.DEFAULT_ON, resource=capability
+            ),
+        ]
+    )
+    assert await rebac_engine.has_permission(
+        team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+
+    # Without the contextual reverse edge the default-on path cannot resolve —
+    # pins why production helpers must always inject it.
+    assert not await rebac_engine.has_permission(
+        team, CapabilityPermission.CAN_USE, capability, consistency_token=token
+    )
+
+    # The team opts out → inherited-on is revoked for it.
+    token = await rebac_engine.add_relation(
+        Relation(subject=team, relation=RelationType.DISABLED, resource=capability)
+    )
+    assert not await rebac_engine.has_permission(
+        team,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_capability_personal_class_scope(rebac_engine: RebacEngine) -> None:
+    """The personal-space class position (CAPAB-01 / #1961, RFC §8.4).
+
+    `personal_on` grants ALL personal spaces (contextual `personal_team` edge)
+    but not regular teams; `personal_disabled` opts the whole class out;
+    precedence is per-team explicit > personal-class > default_on, and the
+    class opt-out never touches a per-space explicit `enabled` grant."""
+
+    org = _organization_ref()
+    capability = _make_reference(Resource.CAPABILITY, prefix="cap")
+    personal = _make_reference(Resource.TEAM, prefix="personal")
+    regular = _make_reference(Resource.TEAM, prefix="team")
+
+    await rebac_engine.add_relation(
+        Relation(subject=org, relation=RelationType.ORGANIZATION, resource=capability)
+    )
+
+    # (1) personal_on → every personal space can use it...
+    token = await rebac_engine.add_relation(
+        Relation(subject=org, relation=RelationType.PERSONAL_ON, resource=capability)
+    )
+    assert await rebac_engine.has_permission(
+        personal,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_personal_team_edge(personal),
+        consistency_token=token,
+    )
+    # ...but a REGULAR team (no personal_team edge injected) does not.
+    assert not await rebac_engine.has_permission(
+        regular,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_team_edge(regular),
+        consistency_token=token,
+    )
+
+    # (2) A per-space explicit `disabled` beats the class grant (most specific).
+    token = await rebac_engine.add_relation(
+        Relation(subject=personal, relation=RelationType.DISABLED, resource=capability)
+    )
+    assert not await rebac_engine.has_permission(
+        personal,
+        CapabilityPermission.CAN_USE,
+        capability,
+        contextual_relations=_org_personal_team_edge(personal),
+        consistency_token=token,
+    )
+
+    # (3) personal_disabled opts the whole class out of a default_on capability,
+    # yet a per-space explicit `enabled` grant survives it (the opt-out
+    # subtracts only from the inherited layer).
+    org_off = _organization_ref()
+    cap2 = _make_reference(Resource.CAPABILITY, prefix="cap")
+    kept = _make_reference(Resource.TEAM, prefix="personal")
+    dropped = _make_reference(Resource.TEAM, prefix="personal")
+    token = await rebac_engine.add_relations(
+        [
+            Relation(
+                subject=org_off, relation=RelationType.ORGANIZATION, resource=cap2
+            ),
+            Relation(subject=org_off, relation=RelationType.DEFAULT_ON, resource=cap2),
+            Relation(
+                subject=org_off, relation=RelationType.PERSONAL_DISABLED, resource=cap2
+            ),
+            Relation(subject=kept, relation=RelationType.ENABLED, resource=cap2),
+        ]
+    )
+    # `dropped` inherited default_on but the personal-class opt-out revokes it.
+    assert not await rebac_engine.has_permission(
+        dropped,
+        CapabilityPermission.CAN_USE,
+        cap2,
+        contextual_relations=_org_personal_team_edge(dropped),
+        consistency_token=token,
+    )
+    # `kept` has an explicit `enabled` grant → the class opt-out cannot touch it.
+    assert await rebac_engine.has_permission(
+        kept,
+        CapabilityPermission.CAN_USE,
+        cap2,
+        contextual_relations=_org_personal_team_edge(kept),
+        consistency_token=token,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_capability_can_manage_is_org_admin(rebac_engine: RebacEngine) -> None:
+    org = _organization_ref()
+    capability = _make_reference(Resource.CAPABILITY, prefix="cap")
+    admin = _make_reference(Resource.USER, prefix="admin")
+    plain = _make_reference(Resource.USER, prefix="plain")
+
+    token = await rebac_engine.add_relations(
+        [
+            Relation(
+                subject=org, relation=RelationType.ORGANIZATION, resource=capability
+            ),
+            Relation(subject=admin, relation=RelationType.PLATFORM_ADMIN, resource=org),
+        ]
+    )
+    assert await rebac_engine.has_permission(
+        admin, CapabilityPermission.CAN_MANAGE, capability, consistency_token=token
+    )
+    assert not await rebac_engine.has_permission(
+        plain, CapabilityPermission.CAN_MANAGE, capability, consistency_token=token
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_capability_lookup_resources_lists_usable(
+    rebac_engine: RebacEngine,
+) -> None:
+    """`lookup_resources(team, can_use, capability)` drives catalog filtering,
+    scoped to the browsed team — not to the user's other memberships."""
+
+    org = _organization_ref()
+    usable = _make_reference(Resource.CAPABILITY, prefix="usable")
+    hidden = _make_reference(Resource.CAPABILITY, prefix="hidden")
+    team = _make_reference(Resource.TEAM, prefix="team")
+    other_team = _make_reference(Resource.TEAM, prefix="other")
+
+    token = await rebac_engine.add_relations(
+        [
+            Relation(subject=org, relation=RelationType.ORGANIZATION, resource=usable),
+            Relation(subject=org, relation=RelationType.ORGANIZATION, resource=hidden),
+            Relation(subject=team, relation=RelationType.ENABLED, resource=usable),
+        ]
+    )
+    resources = await rebac_engine.lookup_resources(
+        team,
+        CapabilityPermission.CAN_USE,
+        Resource.CAPABILITY,
+        contextual_relations=_org_team_edge(team),
+        consistency_token=token,
+    )
+    assert not isinstance(resources, RebacDisabledResult)
+    ids = {ref.id for ref in resources}
+    assert usable.id in ids
+    assert hidden.id not in ids
+
+    # The other team's catalog stays empty (the cross-team leak regression).
+    other_resources = await rebac_engine.lookup_resources(
+        other_team,
+        CapabilityPermission.CAN_USE,
+        Resource.CAPABILITY,
+        contextual_relations=_org_team_edge(other_team),
+        consistency_token=token,
+    )
+    assert not isinstance(other_resources, RebacDisabledResult)
+    assert usable.id not in {ref.id for ref in other_resources}
 
 
 @pytest.mark.integration

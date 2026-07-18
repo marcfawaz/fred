@@ -199,7 +199,9 @@ class ScheduledAutomationDelegationRequest(BaseModel):
         if not normalized:
             raise ValueError("service_subject must not be blank")
         if normalized.startswith("service:"):
-            raise ValueError("service_subject must be the verified Keycloak service-account sub, not a synthetic service:<client_id> value")
+            raise ValueError(
+                "service_subject must be the verified Keycloak service-account sub, not a synthetic service:<client_id> value"
+            )
         if normalized == "*":
             raise ValueError("wildcard service_subject is not allowed")
         return normalized

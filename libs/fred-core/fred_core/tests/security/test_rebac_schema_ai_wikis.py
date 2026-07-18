@@ -125,7 +125,9 @@ def test_ai_wiki_service_delegations_do_not_imply_team_roles() -> None:
 
     for team_role in team_role_relations:
         references = set(_relation_references(team["relations"][team_role]))
-        assert references.isdisjoint(set(AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS.values()))
+        assert references.isdisjoint(
+            set(AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS.values())
+        )
 
 
 def test_ai_wiki_model_does_not_add_wiki_object_type() -> None:
@@ -163,8 +165,6 @@ def test_ai_wiki_additions_preserve_existing_team_role_relations() -> None:
 def test_team_permission_enum_contains_exact_ai_wiki_values() -> None:
     assert {permission.value for permission in AI_WIKI_TEAM_PERMISSION_VALUES} == set(
         AI_WIKI_CAPABILITY_RELATIONS
-    ) | set(
-        AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS
-    )
+    ) | set(AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS)
     for permission, expected_value in AI_WIKI_TEAM_PERMISSION_VALUES.items():
         assert permission.value == expected_value

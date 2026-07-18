@@ -362,7 +362,9 @@ async def assign_scheduled_automation_delegation(
     deps: TeamDependencies,
     user: KeycloakUser = Depends(get_current_user),
 ) -> None:
-    await assign_scheduled_automation_delegation_from_service(user, team_id, request, deps)
+    await assign_scheduled_automation_delegation_from_service(
+        user, team_id, request, deps
+    )
 
 
 @router.delete(
@@ -376,4 +378,6 @@ async def revoke_scheduled_automation_delegation(
     deps: TeamDependencies,
     user: KeycloakUser = Depends(get_current_user),
 ) -> None:
-    await revoke_scheduled_automation_delegation_from_service(user, team_id, request, deps)
+    await revoke_scheduled_automation_delegation_from_service(
+        user, team_id, request, deps
+    )

@@ -12032,6 +12032,24 @@
                       "type": "object",
                       "additionalProperties": false
                     },
+                    "capabilities": {
+                      "description": "Deployment policy for agent-capability team scoping (CAPAB-01 / #1980).\n\nRFC AGENT-CAPABILITY \u00a78.3. Security-sensitive operators can start every\ncapability admin-gated (`default_policy: explicit`) instead of honoring the\n`manifest.team_scope: default_on` seeds.\n\nThe personal-space class position is now pure FGA runtime state, admin-\ntoggleable via `PUT /admin/capabilities/{id}/personal-scope` (RFC \u00a78.4,\namended 2026-07-16 \u2014 the former `personal_defaults` config-seeding list is\nwithdrawn).",
+                      "properties": {
+                        "default_policy": {
+                          "default": "seed",
+                          "description": "seed = honor manifest default-on seeds at first registration; explicit = ignore seeds, start everything admin-gated.",
+                          "enum": [
+                            "seed",
+                            "explicit"
+                          ],
+                          "title": "Default Policy",
+                          "type": "string"
+                        }
+                      },
+                      "title": "CapabilitiesConfig",
+                      "type": "object",
+                      "additionalProperties": false
+                    },
                     "knowledge_flow_base_url": {
                       "default": "http://127.0.0.1:8111/knowledge-flow/v1",
                       "description": "Server-side base URL used by control-plane when it must orchestrate Knowledge Flow attachment cleanup on behalf of the authenticated user.",
@@ -13717,6 +13735,24 @@
                         }
                       },
                       "title": "FrontendBootstrapConfig",
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "capabilities": {
+                      "description": "Deployment policy for agent-capability team scoping (CAPAB-01 / #1980).\n\nRFC AGENT-CAPABILITY \u00a78.3. Security-sensitive operators can start every\ncapability admin-gated (`default_policy: explicit`) instead of honoring the\n`manifest.team_scope: default_on` seeds.\n\nThe personal-space class position is now pure FGA runtime state, admin-\ntoggleable via `PUT /admin/capabilities/{id}/personal-scope` (RFC \u00a78.4,\namended 2026-07-16 \u2014 the former `personal_defaults` config-seeding list is\nwithdrawn).",
+                      "properties": {
+                        "default_policy": {
+                          "default": "seed",
+                          "description": "seed = honor manifest default-on seeds at first registration; explicit = ignore seeds, start everything admin-gated.",
+                          "enum": [
+                            "seed",
+                            "explicit"
+                          ],
+                          "title": "Default Policy",
+                          "type": "string"
+                        }
+                      },
+                      "title": "CapabilitiesConfig",
                       "type": "object",
                       "additionalProperties": false
                     },

@@ -273,7 +273,7 @@ The control plane is a **pure proxy** for these values — it does not interpret
 - `agent_instance_id` — primary identifier
 - `team_id`, `template_id`
 - `display_name`, `description`, `status`
-- `effective_chat_options: EffectiveChatOptions` — **added 2026-05-24 (CHAT-07)** — computed read-only field; same resolution as `ExecutionPreparation.effective_chat_options` but available at mount without a `prepareExecution` round-trip. Never stored; recomputed on every read from active MCP server config.
+- ~~`effective_chat_options: EffectiveChatOptions`~~ — **REMOVED 2026-07-11 (CAPAB-01 #1976).** `EffectiveChatOptions` is retired; chat controls are a session-prep projection shipped on `ExecutionPreparation.chat_controls`, not a listing-surface field. The composer fetches them via an eager prepare-execution at chat open. See RFC AGENT-CAPABILITY-RFC §3.3/§3.7.
 - `created_at`, `updated_at`, `created_by`
 - `tuning_field_values: dict[str, TuningValue]` — frozen snapshot of user-set
   agent tuning values at enrollment; keys constrained to
@@ -368,16 +368,17 @@ Execution semantics:
     even when an operator overrides `prompts.system` and never appears in the
     agent editor.
 - Graph agents read prompt and setting values through `context.tuning_values`
-- tool-owned chat options are resolved from `mcp_config_values` into a typed
-  `effective_chat_options` surface exposed by `ExecutionPreparation`
+- tool-owned chat affordances are computed on the pod by
+  `capability.chat_controls(config)` and shipped as
+  `ExecutionPreparation.chat_controls` (CAPAB-01 #1976; the old
+  `mcp_config_values → effective_chat_options` resolution is retired)
 
 This contract is intentionally narrow:
 
 - prompt fields describe instructions
 - settings fields describe agent behavior
-- chat-option fields that remain agent-authored describe UI affordances
-- tool-owned UI affordances live in `mcp_config_values` and resolve into
-  `effective_chat_options`
+- chat-time UI affordances are computed capability controls
+  (`ExecutionPreparation.chat_controls`, RFC §3.3/§3.7), not a stored option set
 - MCP/model selection stays in dedicated typed product/runtime contracts
 
 ### 3.4 Managed agent instance writes
@@ -690,6 +691,21 @@ See `docs/swift/design/FILESYSTEM.md`.
 - `POST /teams/{team_id}/agent-instances` → `ManagedAgentInstanceSummary`
 - `PATCH /teams/{team_id}/agent-instances/{id}` → `ManagedAgentInstanceSummary`
 - `DELETE /teams/{team_id}/agent-instances/{id}` → 204
+
+> **2026-07-17 (CAPAB-01, PR review finding — closes an unmet #1980 acceptance
+> criterion).** `capability_ids` omitted (or explicitly `null`) on
+> `POST`/`PATCH` no longer means "inherit the template's default MCP servers
+> live, unchecked." It is resolved **once, at save time**, into an explicit
+> list — the template's default capability ids narrowed to what the team
+> currently `can_use` (ReBAC-filtered, no 403 for this implicit-default case)
+> — and that resolved list is always what gets persisted in
+> `ManagedAgentTuning.selected_capability_ids`; it is never left `null`.
+> Previously a `null` selection skipped the `can_use` ReBAC check entirely at
+> every layer (save, session prep, and the runtime's MCP-server activation),
+> letting a team obtain an admin-gated capability for free by submitting no
+> selection. See `AGENT-CAPABILITY-RFC.md` §8.1's dated fix note for the full
+> mechanism, including the required one-off backfill for instances persisted
+> before this change.
 
 **Execution preparation:**
 
@@ -1018,8 +1034,7 @@ now deleted), which iterated **Keycloak app roles** — removed platform-wide by
 AUTHZ-05 review item 8a, so every seeded user had `app_roles: []` and these
 fields were permanently empty/`false` for everyone, including `platform_admin`.
 Live impact before the fix: 6 frontend routes and 3 in-page controls were
-unreachable/disabled for all users (full writeup: `NOTES-AUTHZ05-REVIEW.md`
-item 11).
+unreachable/disabled for all users.
 
 `PermissionSummary` now carries exactly `is_platform_admin` and
 `is_platform_observer` — unchanged, already OpenFGA-derived since review item
@@ -1078,8 +1093,7 @@ unchanged.
 `TeamMember.relation` → `relations`, `UpdateTeamMemberRequest` replaced by
 `GrantTeamMemberRoleRequest`, the PATCH member-role hook replaced by grant/
 revoke hooks. `TeamSettingsMembersTable.tsx` (the only frontend consumer)
-updated in the same change. Design detail: RFC Part 7 (§33-39); outstanding
-follow-ups: `NOTES-AUTHZ05-REVIEW.md`.
+updated in the same change. Design detail: RFC Part 7 (§33-39).
 
 ## 16. Contract Notes — AUTHZ-07 Step 3, `TaskSummary.detail` (2026-07-14)
 
@@ -1115,3 +1129,92 @@ backend is the single source of truth for the target's precedence rules.
 activity surface, OPS-04 §3.4) narrows `detail` on `task.kind === "migration"`
 to render the result; `launchPlatformImport.ts`/`MigrationPage.tsx` consume
 `ImportLaunchResponse.target` directly (no hand-built duplicate).
+
+## 17. Contract Notes — CAPAB-01 (July 2026)
+
+### Admin capability-enablement routes
+
+**2026-07-11 — Routes fixed (CAPAB-01 / RFC `AGENT-CAPABILITY-RFC.md` §8.5;
+backend #1980, admin dashboard #1981).** The Tier 3 admin surface over the
+capability enablement model. All routes are platform-admin-gated: the mutations
+check `capability#can_manage` (the capability is anchored first, idempotently);
+the aggregate list checks the equivalent `organization#can_manage_platform`.
+Structural FGA tuples (`enabled` / `disabled` / `default_on`) are written **only**
+through this surface — every other caller checks the computed `can_use`.
+Implemented in `control_plane_backend/capabilities/api.py`, mounted under
+`/control-plane/v1`.
+
+**2026-07-16 — `can_use` subject corrected to the team.** No route shape
+changed, but the enforcement semantics did: `can_use` is now checked with the
+TEAM in the URL as subject (RFC §8.1 amendment). Consequence visible on this
+surface: `GET /teams/{team_id}/agent-templates` filters each template's
+`available_capabilities` to what THAT team can use — a capability enabled for
+another of the caller's teams no longer appears (and can no longer be saved,
+403) outside its enabled team.
+
+| Method + path | Request | Response | Effect |
+| --- | --- | --- | --- |
+| `GET /admin/capabilities` | — | `CapabilityEnablementList` | Aggregated pod catalog with, per capability: `id`, `name` (i18n key), `version`, `icon`, `team_scope` (`default_on` \| `admin_gated`), `default_on`, `enabled_team_ids`, `team_settings_fields` (the enable-with-settings form specs). |
+| `PUT /admin/capabilities/{capability_id}/teams/{team_id}` | `EnableTeamCapabilityRequest` (`settings`) | `TeamCapabilityEnablementResult` | Enable-with-settings: validates `settings` against `team_settings_fields`, writes the settings row then the `enabled` tuple. |
+| `DELETE /admin/capabilities/{capability_id}/teams/{team_id}` | — | `TeamCapabilityEnablementResult` (`suspended_instances`) | Revoke: deletes the `enabled` tuple (writes a `disabled` opt-out for a default-on cap), reconciles dependent instances → suspension. |
+| `PUT /admin/capabilities/{capability_id}/default-on` | `SetCapabilityDefaultOnRequest` (`default_on`) | `CapabilityDefaultOnResult` (`suspended_instances`) | Toggle the platform-wide `default_on` marker; turning it off revokes inherited access team-by-team and may suspend instances. |
+
+`suspended_instances` on the two revoking mutations is the **delta** the action
+caused (#1975 reconciliation), surfaced by the #1981 dashboard as post-action
+feedback. Frontend consumes the generated hooks via the friendly aliases
+`useAdminCapabilitiesQuery` / `useEnableTeamCapabilityMutation` /
+`useDisableTeamCapabilityMutation` / `useSetCapabilityDefaultOnMutation` in
+`controlPlaneApiEnhancements.ts`; the dashboard lives at `/admin/capabilities`.
+
+**2026-07-16 — personal-space class scope (CAPAB-01 / #1961, RFC
+`AGENT-CAPABILITY-RFC.md` §8.4 amendment).** The personal-space capability class
+is now pure FGA runtime state, admin-toggleable like `default_on` — replacing the
+withdrawn config-only `platform.capabilities.personal_defaults` first-touch
+seeding. One new route (org-admin-gated on `capability#can_manage`, same as
+`/default-on`), and one new field on the aggregate list item.
+
+| Method + path | Request | Response | Effect |
+| --- | --- | --- | --- |
+| `PUT /admin/capabilities/{capability_id}/personal-scope` | `SetCapabilityPersonalScopeRequest` (`scope: "enabled" \| "disabled" \| "default"`) | `CapabilityPersonalScopeResult` (`scope`, `suspended_instances`) | Set the personal-space class tri-state: `enabled` writes the `personal_on` org tuple (usable by ALL personal spaces), `disabled` writes `personal_disabled` (blocked for all), `default` clears both. Idempotent. A transition that loses access for personal spaces (enabled→disabled, enabled→default without default_on, default→disabled with default_on) suspends dependent **personal-space** instances whose team lacks an explicit `enabled` grant. `enabled` is rejected (409) for a capability with a required team setting, mirroring `default_on`. |
+
+The `GET /admin/capabilities` item gains **`personal_scope`** (`"enabled" \|
+"disabled" \| "default"`), derived from the two org-subject class tuples, and
+**`total_personal_space_count`** (the realm user count — one personal space per
+user; `0` = user directory unavailable, read as "unknown" like
+`total_team_count`), the denominator the dashboard uses to render personal-class
+reach as an `X personal space(s)` line under the team count. Precedence
+across the whole matrix: a team's explicit `enabled`/`disabled` beats the
+personal-class position, which beats `default_on`. Frontend consumes the
+`useSetCapabilityPersonalScopeMutation` friendly alias; the team-matrix drawer
+renders the class as a synthetic pinned "All personal spaces" first row and drops
+the admin's own personal team from the ordinary per-team rows.
+
+**2026-07-17 — agent templates join this surface (CAPAB-01, `AGENT-CAPABILITY-RFC.md`
+§8.6 / `AGENT-VISIBILITY-RFC.md` §7.5).** `CapabilityEnablementItem` and
+`CapabilityCatalogEntry` gained `kind: "tool" | "agent"` (defaults `"tool"`,
+so existing rows are unchanged). `GET /admin/capabilities` now also lists a
+`kind="agent"` row per registered agent template (control-plane-side
+projection — never a runtime pod change), enabled/disabled through the exact
+same `PUT`/`DELETE .../teams/{team_id}` and gated the exact same way. The
+frontend (`CapabilitiesPage.tsx`) filters the one dataset by `kind` (a
+"Tools"/"Agents" toggle) rather than adding a second page or route. Also
+newly gated on `can_use`, using the same `capability` object space with id
+`f"{runtime_id}__{agent_id}"`: `GET /teams/{team_id}/agent-templates` (hides
+a template the team isn't granted, not just its nested
+`available_capabilities` as before) and `POST /teams/{team_id}/agent-instances`
+(404 on an ungranted `template_id`, matching the existing non-public-template
+anti-guessing convention).
+
+**Known gaps (deferred, tracked on #1975 / a future enablement-list extension):**
+no **resting** per-capability suspended-instance count (only the mutation delta
+exists — the suspension row records a typed reason, not the causing capability
+id). The config-only `platform.capabilities.personal_defaults` list was removed
+by the 2026-07-16 §8.4 amendment (replaced by the `personal-scope` route above).
+
+**2026-07-16 (merge with swift) — `can_manage` re-anchored to `platform_admin`.**
+AUTHZ-05 removed the legacy Keycloak `admin`/`editor`/`viewer` organization-role
+bridge before this branch merged; `capability#can_manage` (`schema.fga`) is
+updated in the same change from `admin from organization` to `platform_admin
+from organization`, matching every other org-admin-tier capability. No route
+shape or request/response change — enforcement now resolves through
+`platform_admin` instead of the retired `admin` relation.

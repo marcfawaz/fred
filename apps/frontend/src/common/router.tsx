@@ -14,6 +14,7 @@
 
 import AdminTeamsPage from "@components/pages/admin/AdminTeamsPage/AdminTeamsPage.tsx";
 import AnalyticsPage from "@components/pages/admin/AnalyticsPage/AnalyticsPage.tsx";
+import CapabilitiesPage from "@components/pages/admin/CapabilitiesPage/CapabilitiesPage.tsx";
 import MigrationPage from "@components/pages/admin/MigrationPage/MigrationPage.tsx";
 import SelfTestPage from "@components/pages/admin/SelfTestPage/SelfTestPage.tsx";
 import TasksPage from "@components/pages/admin/TasksPage/TasksPage.tsx";
@@ -38,6 +39,7 @@ import { createBrowserRouter, Navigate, RouteObject, useParams } from "react-rou
 import LoadingWithProgress from "../components/LoadingWithProgress";
 import RendererPlayground from "../components/markdown/RenderedPlayground";
 import { Protected } from "../components/Protected";
+import { useFrontendBootstrap } from "../hooks/useFrontendBootstrap.ts";
 import { ComingSoon } from "../pages/ComingSoon.tsx";
 import { McpHub } from "../pages/McpHub";
 import { PageError } from "../pages/PageError";
@@ -50,6 +52,17 @@ const basename = getConfig().frontend_basename;
 const ManagedChatPageRoute = () => {
   const { agentInstanceId } = useParams<{ agentInstanceId: string }>();
   return <ManagedChatPage key={agentInstanceId} />;
+};
+
+// Bare `/` should land on the canonical personal-space URL (`personal-<uid>`,
+// not the bare `"personal"` alias) so the address bar and TeamSelectionNavbar's
+// selection check agree from the first paint. A static `<Navigate>` here never
+// resolves the real id: CTRLP-10 residual, see
+// docs/swift/rfc/PERSONAL-TEAM-ISOLATION-RFC.md §4.3.
+const HomeIndexRoute = () => {
+  const { activeTeam, isLoading } = useFrontendBootstrap();
+  if (isLoading) return null;
+  return <Navigate to={`/team/${activeTeam?.id ?? "personal"}/agents`} replace />;
 };
 
 // Bare `/admin` has no page of its own — land on the first page the caller
@@ -96,7 +109,7 @@ export const routes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: <Navigate to="/team/personal/agents" replace />,
+        element: <HomeIndexRoute />,
       },
       {
         path: "team/:teamId/agents",
@@ -172,6 +185,17 @@ export const routes: RouteObject[] = [
         element: (
           <Protected requires="observer">
             <AnalyticsPage />
+          </Protected>
+        ),
+      },
+      {
+        // Admin Capabilities dashboard (CAPAB-01 / #1981, RFC §8.5). Gated on the
+        // admin role — the equivalent of `capability#can_manage` (org-admin), the
+        // same relation the backend list endpoint enforces.
+        path: "admin/capabilities",
+        element: (
+          <Protected requires="admin">
+            <CapabilitiesPage />
           </Protected>
         ),
       },
