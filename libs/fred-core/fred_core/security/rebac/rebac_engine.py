@@ -72,6 +72,12 @@ class RelationType(str, Enum):
     TEAM_ANALYST = "team_analyst"
     TEAM_MEMBER = "team_member"
 
+    # AUTHZ-WIKI-08: explicit, revocable team-scoped service delegations for
+    # scheduled AI Wiki automation. These relations do not imply team roles.
+    WIKI_REVIEW_ASSISTANT_RUNNER = "wiki_review_assistant_runner"
+    WIKI_GUARDED_AUTO_APPLY_RUNNER = "wiki_guarded_auto_apply_runner"
+    WIKI_AUTONOMOUS_APPLY_RUNNER = "wiki_autonomous_apply_runner"
+
 
 class TagPermission(str, Enum):
     """Actions allowed on libraries/tags.

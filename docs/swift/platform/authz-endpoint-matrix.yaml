@@ -288,6 +288,21 @@ operations:
     required_permission: can_administer_{admins,editors,analysts,members} (per revoked role)
   - service: control-plane
     method: GET
+    path: /control-plane/v1/teams/{team_id}/scheduled-automation-delegations
+    review_status: approved
+    required_permission: can_administer_admins
+  - service: control-plane
+    method: POST
+    path: /control-plane/v1/teams/{team_id}/scheduled-automation-delegations
+    review_status: approved
+    required_permission: can_administer_admins
+  - service: control-plane
+    method: DELETE
+    path: /control-plane/v1/teams/{team_id}/scheduled-automation-delegations
+    review_status: approved
+    required_permission: can_administer_admins
+  - service: control-plane
+    method: GET
     path: /control-plane/v1/teams/{team_id}/prompts
     review_status: pending_review
     required_permission: pending_review

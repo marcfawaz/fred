@@ -31,9 +31,12 @@ AI_WIKI_CAPABILITY_RELATIONS = {
     "can_manage_wiki_schema": "team_admin",
     "can_manage_wiki_lifecycle": "team_admin",
     "can_manage_wiki_governance": "team_admin",
-    "can_use_wiki_review_assistant": "team_admin",
-    "can_run_wiki_guarded_auto_apply": "team_admin",
-    "can_run_wiki_autonomous_apply": "team_admin",
+}
+
+AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS = {
+    "can_use_wiki_review_assistant": "wiki_review_assistant_runner",
+    "can_run_wiki_guarded_auto_apply": "wiki_guarded_auto_apply_runner",
+    "can_run_wiki_autonomous_apply": "wiki_autonomous_apply_runner",
 }
 
 AI_WIKI_TEAM_PERMISSION_VALUES = {
@@ -81,16 +84,48 @@ def test_ai_wiki_capabilities_exist_with_exact_team_role_roots() -> None:
             "computedUserset": {"relation": expected_relation}
         }
 
+    for capability, service_relation in AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS.items():
+        assert team["relations"][capability] == {
+            "union": {
+                "child": [
+                    {"computedUserset": {"relation": "team_admin"}},
+                    {"computedUserset": {"relation": service_relation}},
+                ]
+            }
+        }
+
 
 def test_ai_wiki_capabilities_do_not_use_public_or_platform_relations() -> None:
     team = _type_definition("team")
 
-    for capability in AI_WIKI_CAPABILITY_RELATIONS:
+    for capability in {
+        *AI_WIKI_CAPABILITY_RELATIONS,
+        *AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS,
+    }:
         references = set(_relation_references(team["relations"][capability]))
         assert references.isdisjoint(FORBIDDEN_AI_WIKI_RELATION_REFERENCES), (
             f"{capability} must stay team-role-only; found forbidden "
             f"references: {references & FORBIDDEN_AI_WIKI_RELATION_REFERENCES}"
         )
+
+
+def test_ai_wiki_service_delegations_are_direct_user_relations_only() -> None:
+    team = _type_definition("team")
+
+    for relation in AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS.values():
+        assert team["metadata"]["relations"][relation] == {
+            "directly_related_user_types": [{"type": "user"}]
+        }
+        assert team["relations"][relation] == {"this": {}}
+
+
+def test_ai_wiki_service_delegations_do_not_imply_team_roles() -> None:
+    team = _type_definition("team")
+    team_role_relations = ("team_admin", "team_editor", "team_member")
+
+    for team_role in team_role_relations:
+        references = set(_relation_references(team["relations"][team_role]))
+        assert references.isdisjoint(set(AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS.values()))
 
 
 def test_ai_wiki_model_does_not_add_wiki_object_type() -> None:
@@ -128,6 +163,8 @@ def test_ai_wiki_additions_preserve_existing_team_role_relations() -> None:
 def test_team_permission_enum_contains_exact_ai_wiki_values() -> None:
     assert {permission.value for permission in AI_WIKI_TEAM_PERMISSION_VALUES} == set(
         AI_WIKI_CAPABILITY_RELATIONS
+    ) | set(
+        AI_WIKI_AUTOMATION_CAPABILITY_RELATIONS
     )
     for permission, expected_value in AI_WIKI_TEAM_PERMISSION_VALUES.items():
         assert permission.value == expected_value

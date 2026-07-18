@@ -17,6 +17,8 @@ from control_plane_backend.teams.schemas import (
     RemoveTeamMemberResponse,
     RescueTeamAdminRequest,
     RetentionUpdateError,
+    ScheduledAutomationDelegation,
+    ScheduledAutomationDelegationRequest,
     Team,
     TeamAdminConstraintError,
     TeamAlreadyExistsError,
@@ -35,7 +37,13 @@ from control_plane_backend.teams.service import (
 from control_plane_backend.teams.service import create_team as create_team_from_service
 from control_plane_backend.teams.service import delete_team as delete_team_from_service
 from control_plane_backend.teams.service import (
+    assign_scheduled_automation_delegation as assign_scheduled_automation_delegation_from_service,
+)
+from control_plane_backend.teams.service import (
     get_team_by_id as get_team_by_id_from_service,
+)
+from control_plane_backend.teams.service import (
+    list_scheduled_automation_delegations as list_scheduled_automation_delegations_from_service,
 )
 from control_plane_backend.teams.service import (
     grant_team_member_role as grant_team_member_role_from_service,
@@ -55,6 +63,9 @@ from control_plane_backend.teams.service import (
 )
 from control_plane_backend.teams.service import (
     revoke_team_member_role as revoke_team_member_role_from_service,
+)
+from control_plane_backend.teams.service import (
+    revoke_scheduled_automation_delegation as revoke_scheduled_automation_delegation_from_service,
 )
 from control_plane_backend.teams.service import update_team as update_team_from_service
 from control_plane_backend.teams.service import (
@@ -324,3 +335,45 @@ async def revoke_team_member_role(
     remaining role is refused (`TeamMemberLastRoleError`, 409) — use
     `DELETE /teams/{team_id}/members/{user_id}` to remove a member entirely."""
     await revoke_team_member_role_from_service(user, team_id, user_id, relation, deps)
+
+
+@router.get(
+    "/teams/{team_id}/scheduled-automation-delegations",
+    response_model=list[ScheduledAutomationDelegation],
+    response_model_exclude_none=True,
+    summary="List AI Wiki scheduled-automation service delegations for a team",
+)
+async def list_scheduled_automation_delegations(
+    team_id: Annotated[TeamId, Path()],
+    deps: TeamDependencies,
+    user: KeycloakUser = Depends(get_current_user),
+) -> list[ScheduledAutomationDelegation]:
+    return await list_scheduled_automation_delegations_from_service(user, team_id, deps)
+
+
+@router.post(
+    "/teams/{team_id}/scheduled-automation-delegations",
+    status_code=204,
+    summary="Assign one AI Wiki scheduled-automation service delegation to a team",
+)
+async def assign_scheduled_automation_delegation(
+    team_id: Annotated[TeamId, Path()],
+    request: ScheduledAutomationDelegationRequest,
+    deps: TeamDependencies,
+    user: KeycloakUser = Depends(get_current_user),
+) -> None:
+    await assign_scheduled_automation_delegation_from_service(user, team_id, request, deps)
+
+
+@router.delete(
+    "/teams/{team_id}/scheduled-automation-delegations",
+    status_code=204,
+    summary="Revoke one AI Wiki scheduled-automation service delegation from a team",
+)
+async def revoke_scheduled_automation_delegation(
+    team_id: Annotated[TeamId, Path()],
+    request: ScheduledAutomationDelegationRequest,
+    deps: TeamDependencies,
+    user: KeycloakUser = Depends(get_current_user),
+) -> None:
+    await revoke_scheduled_automation_delegation_from_service(user, team_id, request, deps)

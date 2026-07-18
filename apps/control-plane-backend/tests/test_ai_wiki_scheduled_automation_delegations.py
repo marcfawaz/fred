@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from control_plane_backend.teams.dependencies import TeamServiceDependencies
+from control_plane_backend.teams.schemas import (
+    ScheduledAutomationDelegationRelation,
+    ScheduledAutomationDelegationRequest,
+    TeamNotFoundError,
+)
+from control_plane_backend.teams.service import (
+    assign_scheduled_automation_delegation,
+    list_scheduled_automation_delegations,
+    revoke_scheduled_automation_delegation,
+)
+from fred_core import KeycloakUser, RebacReference, Relation, RelationType, Resource, TeamPermission
+from fred_core.common import TeamId
+from fred_core.scheduler import SchedulerBackend
+from fred_core.teams.metadata_store import TeamMetadata
+from pydantic import ValidationError
+
+
+class _FakeRebac:
+    def __init__(self) -> None:
+        self.relations: set[tuple[str, str, str]] = set()
+        self.permission_checks: list[tuple[str, tuple[TeamPermission, ...]]] = []
+
+    async def check_user_team_permissions_or_raise(self, *, user, team_id, permissions):
+        self.permission_checks.append((str(team_id), tuple(permissions)))
+        return "token"
+
+    async def add_relation(self, relation: Relation) -> None:
+        self.relations.add(
+            (str(relation.resource.id), relation.relation.value, relation.subject.id)
+        )
+
+    async def delete_relations(self, relations: list[Relation]) -> None:
+        for relation in relations:
+            self.relations.discard(
+                (str(relation.resource.id), relation.relation.value, relation.subject.id)
+            )
+
+    async def lookup_subjects(self, resource, relation: RelationType, subject_type, **kwargs):
+        return [
+            RebacReference(Resource.USER, subject)
+            for team_id, rel, subject in sorted(self.relations)
+            if team_id == str(resource.id) and rel == relation.value
+        ]
+
+
+class _FakeMetadataStore:
+    async def get_by_team_id(self, team_id, session=None):
+        if str(team_id) == "fredlab":
+            return TeamMetadata(id=TeamId("fredlab"), name="Fredlab")
+        if str(team_id) == "other-team":
+            return TeamMetadata(id=TeamId("other-team"), name="Other")
+        return None
+
+
+def _deps(rebac: _FakeRebac) -> TeamServiceDependencies:
+    metadata = _FakeMetadataStore()
+    return TeamServiceDependencies(
+        configuration=SimpleNamespace(app=SimpleNamespace()),
+        rebac=rebac,  # type: ignore[arg-type]
+        scheduler_backend=SchedulerBackend.MEMORY,
+        get_team_metadata_store=lambda: metadata,  # type: ignore[return-value]
+        get_content_store=lambda: None,  # type: ignore[return-value]
+        get_session_store=lambda: None,  # type: ignore[return-value]
+        get_purge_queue_store=lambda: None,  # type: ignore[return-value]
+        get_policy_catalog=lambda: None,  # type: ignore[return-value]
+        get_users_by_ids=lambda _ids: {},  # type: ignore[arg-type]
+        run_lifecycle_manager_once_in_memory=lambda _input: None,  # type: ignore[arg-type]
+    )
+
+
+def _admin() -> KeycloakUser:
+    return KeycloakUser(uid="human-admin-sub", username="admin", email=None, roles=[])
+
+
+@pytest.mark.asyncio
+async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempotent() -> None:
+    rebac = _FakeRebac()
+    request = ScheduledAutomationDelegationRequest(
+        service_subject="service-account-sub",
+        relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+    )
+
+    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac))
+    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac))
+
+    listed = await list_scheduled_automation_delegations(_admin(), TeamId("fredlab"), _deps(rebac))
+    assert [(item.service_subject, item.relation) for item in listed] == [
+        ("service-account-sub", ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER)
+    ]
+    assert rebac.permission_checks[-1] == (
+        "fredlab",
+        (TeamPermission.CAN_ADMINISTER_ADMINS,),
+    )
+
+    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac))
+    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac))
+
+    assert await list_scheduled_automation_delegations(_admin(), TeamId("fredlab"), _deps(rebac)) == []
+
+
+@pytest.mark.asyncio
+async def test_scheduled_automation_delegation_is_team_scoped() -> None:
+    rebac = _FakeRebac()
+    request = ScheduledAutomationDelegationRequest(
+        service_subject="service-account-sub",
+        relation=ScheduledAutomationDelegationRelation.WIKI_GUARDED_AUTO_APPLY_RUNNER,
+    )
+
+    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac))
+
+    assert await list_scheduled_automation_delegations(_admin(), TeamId("other-team"), _deps(rebac)) == []
+
+
+@pytest.mark.asyncio
+async def test_scheduled_automation_delegation_requires_existing_team() -> None:
+    request = ScheduledAutomationDelegationRequest(
+        service_subject="service-account-sub",
+        relation=ScheduledAutomationDelegationRelation.WIKI_AUTONOMOUS_APPLY_RUNNER,
+    )
+
+    with pytest.raises(TeamNotFoundError):
+        await assign_scheduled_automation_delegation(_admin(), TeamId("missing"), request, _deps(_FakeRebac()))
+
+
+def test_scheduled_automation_delegation_rejects_synthetic_or_wildcard_subjects() -> None:
+    with pytest.raises(ValidationError):
+        ScheduledAutomationDelegationRequest(
+            service_subject="service:fred-ai-wiki-worker",
+            relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+        )
+    with pytest.raises(ValidationError):
+        ScheduledAutomationDelegationRequest(
+            service_subject="*",
+            relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+        )

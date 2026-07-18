@@ -49,6 +49,9 @@ from control_plane_backend.teams.schemas import (
     RemoveTeamMemberResponse,
     RetentionFieldView,
     RetentionUpdateError,
+    ScheduledAutomationDelegation,
+    ScheduledAutomationDelegationRelation,
+    ScheduledAutomationDelegationRequest,
     Team,
     TeamAdminConstraintError,
     TeamAlreadyExistsError,
@@ -1010,6 +1013,99 @@ async def revoke_team_member_role(
         relation.value,
         user_id,
         team_id,
+    )
+
+
+async def list_scheduled_automation_delegations(
+    user: KeycloakUser,
+    team_id: TeamId,
+    deps: TeamServiceDependencies,
+) -> list[ScheduledAutomationDelegation]:
+    rebac = deps.rebac
+    await _validate_team_and_check_permission(
+        user,
+        team_id,
+        rebac,
+        [TeamPermission.CAN_ADMINISTER_ADMINS],
+        deps,
+    )
+    relation_subjects = await asyncio.gather(
+        *[
+            _get_team_users_by_relation(rebac, team_id, relation.to_relation())
+            for relation in ScheduledAutomationDelegationRelation
+        ]
+    )
+    delegations: list[ScheduledAutomationDelegation] = []
+    for relation, subjects in zip(ScheduledAutomationDelegationRelation, relation_subjects):
+        for subject in sorted(subjects):
+            delegations.append(
+                ScheduledAutomationDelegation(
+                    service_subject=subject,
+                    relation=relation,
+                )
+            )
+    return delegations
+
+
+async def assign_scheduled_automation_delegation(
+    user: KeycloakUser,
+    team_id: TeamId,
+    request: ScheduledAutomationDelegationRequest,
+    deps: TeamServiceDependencies,
+) -> None:
+    rebac = deps.rebac
+    await _validate_team_and_check_permission(
+        user,
+        team_id,
+        rebac,
+        [TeamPermission.CAN_ADMINISTER_ADMINS],
+        deps,
+    )
+    await rebac.add_relation(
+        Relation(
+            subject=RebacReference(Resource.USER, request.service_subject),
+            relation=request.relation.to_relation(),
+            resource=RebacReference(Resource.TEAM, team_id),
+        )
+    )
+    logger.info(
+        "Assigned scheduled AI Wiki automation delegation relation=%s team_id=%s service_subject=%s assigned_by=%s",
+        request.relation.value,
+        team_id,
+        request.service_subject,
+        user.uid,
+    )
+
+
+async def revoke_scheduled_automation_delegation(
+    user: KeycloakUser,
+    team_id: TeamId,
+    request: ScheduledAutomationDelegationRequest,
+    deps: TeamServiceDependencies,
+) -> None:
+    rebac = deps.rebac
+    await _validate_team_and_check_permission(
+        user,
+        team_id,
+        rebac,
+        [TeamPermission.CAN_ADMINISTER_ADMINS],
+        deps,
+    )
+    await rebac.delete_relations(
+        [
+            Relation(
+                subject=RebacReference(Resource.USER, request.service_subject),
+                relation=request.relation.to_relation(),
+                resource=RebacReference(Resource.TEAM, team_id),
+            )
+        ]
+    )
+    logger.info(
+        "Revoked scheduled AI Wiki automation delegation relation=%s team_id=%s service_subject=%s revoked_by=%s",
+        request.relation.value,
+        team_id,
+        request.service_subject,
+        user.uid,
     )
 
 

@@ -173,6 +173,38 @@ class UserTeamRelation(str, Enum):
         return RelationType(self.value)
 
 
+class ScheduledAutomationDelegationRelation(str, Enum):
+    WIKI_REVIEW_ASSISTANT_RUNNER = RelationType.WIKI_REVIEW_ASSISTANT_RUNNER.value
+    WIKI_GUARDED_AUTO_APPLY_RUNNER = RelationType.WIKI_GUARDED_AUTO_APPLY_RUNNER.value
+    WIKI_AUTONOMOUS_APPLY_RUNNER = RelationType.WIKI_AUTONOMOUS_APPLY_RUNNER.value
+
+    def to_relation(self) -> RelationType:
+        return RelationType(self.value)
+
+
+class ScheduledAutomationDelegation(BaseModel):
+    type: Literal["service"] = "service"
+    service_subject: str
+    relation: ScheduledAutomationDelegationRelation
+
+
+class ScheduledAutomationDelegationRequest(BaseModel):
+    service_subject: str = Field(min_length=1)
+    relation: ScheduledAutomationDelegationRelation
+
+    @field_validator("service_subject")
+    @classmethod
+    def _validate_service_subject(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("service_subject must not be blank")
+        if normalized.startswith("service:"):
+            raise ValueError("service_subject must be the verified Keycloak service-account sub, not a synthetic service:<client_id> value")
+        if normalized == "*":
+            raise ValueError("wildcard service_subject is not allowed")
+        return normalized
+
+
 class TeamMember(BaseModel):
     type: Literal["user"] = "user"
     # AUTHZ-06 (RFC Part 7 §36): a member may hold more than one team role
