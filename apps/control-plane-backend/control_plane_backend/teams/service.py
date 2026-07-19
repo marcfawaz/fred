@@ -43,6 +43,7 @@ from control_plane_backend.scheduler.policies.retention_resolver import (
 )
 from control_plane_backend.scheduler.temporal.structures import LifecycleManagerInput
 from control_plane_backend.teams.dependencies import TeamServiceDependencies
+from control_plane_backend.teams.scheduled_automation_audit_store import ScheduledAutomationDelegationAuditRecord
 from control_plane_backend.teams.schemas import (
     AddTeamMemberRequest,
     BannerUploadError,
@@ -1079,6 +1080,17 @@ async def assign_scheduled_automation_delegation(
             resource=RebacReference(Resource.TEAM, team_id),
         )
     )
+    await deps.append_scheduled_automation_audit(
+        ScheduledAutomationDelegationAuditRecord(
+            human_admin_subject=user.uid,
+            action="assign",
+            service_client_id=request.service_client_id,
+            service_subject=service_subject,
+            team_id=str(team_id),
+            relation=request.relation.value,
+            result="succeeded",
+        )
+    )
     logger.info(
         "Assigned scheduled AI Wiki automation delegation relation=%s team_id=%s service_client_id=%s service_subject=%s assigned_by=%s",
         request.relation.value,
@@ -1116,6 +1128,17 @@ async def revoke_scheduled_automation_delegation(
                 resource=RebacReference(Resource.TEAM, team_id),
             )
         ]
+    )
+    await deps.append_scheduled_automation_audit(
+        ScheduledAutomationDelegationAuditRecord(
+            human_admin_subject=user.uid,
+            action="revoke",
+            service_client_id=request.service_client_id,
+            service_subject=service_subject,
+            team_id=str(team_id),
+            relation=request.relation.value,
+            result="succeeded",
+        )
     )
     logger.info(
         "Revoked scheduled AI Wiki automation delegation relation=%s team_id=%s service_client_id=%s service_subject=%s revoked_by=%s",

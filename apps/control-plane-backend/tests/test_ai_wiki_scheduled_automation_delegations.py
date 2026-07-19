@@ -28,6 +28,9 @@ from fred_core.teams.metadata_store import TeamMetadata
 from pydantic import ValidationError
 
 
+SERVICE_AGENT_ROLE = "service_agent"
+
+
 class _FakeRebac:
     def __init__(self) -> None:
         self.relations: set[tuple[str, str, str]] = set()
@@ -72,12 +75,23 @@ class _FakeMetadataStore:
 
 
 def _deps(
+<<<<<<< Updated upstream
     rebac: _FakeRebac, *, service_subject: str | None = "service-account-sub"
+=======
+    rebac: _FakeRebac,
+    *,
+    service_subject: str | None = "service-account-sub",
+    audit_records: list | None = None,
+>>>>>>> Stashed changes
 ) -> TeamServiceDependencies:
     metadata = _FakeMetadataStore()
 
     async def _resolve_service_subject(_client_id: str) -> str | None:
         return service_subject
+
+    async def _append_audit(record) -> None:
+        if audit_records is not None:
+            audit_records.append(record)
 
     return TeamServiceDependencies(
         configuration=SimpleNamespace(app=SimpleNamespace()),  # type: ignore[arg-type]
@@ -91,6 +105,7 @@ def _deps(
         get_users_by_ids=lambda _ids: {},  # type: ignore[arg-type]
         run_lifecycle_manager_once_in_memory=lambda _input: None,  # type: ignore[arg-type]
         resolve_service_account_subject=_resolve_service_subject,
+        append_scheduled_automation_audit=_append_audit,
     )
 
 
@@ -98,22 +113,32 @@ def _admin() -> KeycloakUser:
     return KeycloakUser(uid="human-admin-sub", username="admin", email=None, roles=[])
 
 
+def _service_agent() -> KeycloakUser:
+    return KeycloakUser(uid="service-agent-sub", username="service-account-fred-ai-wiki-worker", email=None, roles=[SERVICE_AGENT_ROLE])
+
+
 @pytest.mark.asyncio
 async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempotent() -> (
     None
 ):
     rebac = _FakeRebac()
+    audit_records = []
     request = ScheduledAutomationDelegationRequest(
         service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
     )
 
+<<<<<<< Updated upstream
     await assign_scheduled_automation_delegation(
         _admin(), TeamId("fredlab"), request, _deps(rebac)
     )
     await assign_scheduled_automation_delegation(
         _admin(), TeamId("fredlab"), request, _deps(rebac)
     )
+=======
+    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
+    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
+>>>>>>> Stashed changes
 
     listed = await list_scheduled_automation_delegations(
         _admin(), TeamId("fredlab"), _deps(rebac)
@@ -130,6 +155,7 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         (TeamPermission.CAN_ADMINISTER_ADMINS,),
     )
 
+<<<<<<< Updated upstream
     await revoke_scheduled_automation_delegation(
         _admin(), TeamId("fredlab"), request, _deps(rebac)
     )
@@ -143,6 +169,18 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         )
         == []
     )
+=======
+    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
+    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
+
+    assert await list_scheduled_automation_delegations(_admin(), TeamId("fredlab"), _deps(rebac)) == []
+    assert [record.action for record in audit_records] == ["assign", "assign", "revoke", "revoke"]
+    assert {record.human_admin_subject for record in audit_records} == {"human-admin-sub"}
+    assert {record.service_client_id for record in audit_records} == {"fred-ai-wiki-worker"}
+    assert {record.service_subject for record in audit_records} == {"service-account-sub"}
+    assert {record.team_id for record in audit_records} == {"fredlab"}
+    assert {record.result for record in audit_records} == {"succeeded"}
+>>>>>>> Stashed changes
 
 
 @pytest.mark.asyncio
@@ -201,9 +239,26 @@ async def test_scheduled_automation_delegation_requires_resolved_service_account
     )
 
     with pytest.raises(ValueError):
+<<<<<<< Updated upstream
         await assign_scheduled_automation_delegation(
             _admin(),
             TeamId("fredlab"),
             request,
             _deps(_FakeRebac(), service_subject=None),
         )
+=======
+        await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(_FakeRebac(), service_subject=None))
+
+
+@pytest.mark.asyncio
+async def test_scheduled_automation_service_identity_cannot_manage_delegations() -> None:
+    request = ScheduledAutomationDelegationRequest(
+        service_client_id="fred-ai-wiki-worker",
+        relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
+    )
+
+    with pytest.raises(PermissionError):
+        await assign_scheduled_automation_delegation(_service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac()))
+    with pytest.raises(PermissionError):
+        await revoke_scheduled_automation_delegation(_service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac()))
+>>>>>>> Stashed changes

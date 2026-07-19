@@ -27,6 +27,10 @@ from control_plane_backend.scheduler.temporal.structures import (
     LifecycleManagerInput,
     LifecycleManagerResult,
 )
+from control_plane_backend.teams.scheduled_automation_audit_store import (
+    ScheduledAutomationDelegationAuditRecord,
+    ScheduledAutomationDelegationAuditStore,
+)
 from control_plane_backend.users.dependencies import build_user_service_dependencies
 from control_plane_backend.users.schemas import UserSummary
 from control_plane_backend.users.service import get_users_by_ids
@@ -43,9 +47,17 @@ ServiceAccountSubjectResolver: TypeAlias = Callable[
     [str],
     Awaitable[str | None],
 ]
+ScheduledAutomationAuditAppender: TypeAlias = Callable[
+    [ScheduledAutomationDelegationAuditRecord],
+    Awaitable[None],
+]
 
 
 async def _default_service_account_subject_resolver(_client_id: str) -> str | None:
+    return None
+
+
+async def _default_scheduled_automation_audit_appender(_record: ScheduledAutomationDelegationAuditRecord) -> None:
     return None
 
 
@@ -78,9 +90,14 @@ class TeamServiceDependencies:
     get_policy_catalog: Callable[[], ConversationPolicyCatalog]
     get_users_by_ids: UserSummaryLookup
     run_lifecycle_manager_once_in_memory: LifecycleRunner
+<<<<<<< Updated upstream
     resolve_service_account_subject: ServiceAccountSubjectResolver = (
         _default_service_account_subject_resolver
     )
+=======
+    resolve_service_account_subject: ServiceAccountSubjectResolver = _default_service_account_subject_resolver
+    append_scheduled_automation_audit: ScheduledAutomationAuditAppender = _default_scheduled_automation_audit_appender
+>>>>>>> Stashed changes
 
 
 def build_team_service_dependencies(
@@ -139,6 +156,11 @@ def build_team_service_dependencies(
             f"service-account-{client_id}", user_deps
         )
 
+    scheduled_audit_store = ScheduledAutomationDelegationAuditStore(container.get_pg_async_engine())
+
+    async def _append_scheduled_automation_audit(record: ScheduledAutomationDelegationAuditRecord) -> None:
+        await scheduled_audit_store.append(record)
+
     if lifecycle_runner is None:
         lifecycle_deps = build_lifecycle_action_dependencies(container)
 
@@ -179,6 +201,7 @@ def build_team_service_dependencies(
         get_users_by_ids=user_summary_lookup,
         run_lifecycle_manager_once_in_memory=lifecycle_runner,
         resolve_service_account_subject=_resolve_service_account_subject,
+        append_scheduled_automation_audit=_append_scheduled_automation_audit,
     )
 
 

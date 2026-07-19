@@ -7,6 +7,7 @@ import control_plane_backend.models.bootstrap_models  # noqa: F401 — registers
 import control_plane_backend.models.capability_settings_models  # noqa: F401
 import control_plane_backend.models.prompt_models  # noqa: F401
 import control_plane_backend.models.purge_queue_models  # noqa: F401
+import control_plane_backend.models.scheduled_automation_audit_models  # noqa: F401
 import control_plane_backend.models.session_attachment_models  # noqa: F401
 import control_plane_backend.models.session_metadata_models  # noqa: F401
 import fred_core.documents.document_models  # noqa: F401 — registers metadata table with CoreBase
