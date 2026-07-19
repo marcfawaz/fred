@@ -75,14 +75,10 @@ class _FakeMetadataStore:
 
 
 def _deps(
-<<<<<<< Updated upstream
-    rebac: _FakeRebac, *, service_subject: str | None = "service-account-sub"
-=======
     rebac: _FakeRebac,
     *,
     service_subject: str | None = "service-account-sub",
     audit_records: list | None = None,
->>>>>>> Stashed changes
 ) -> TeamServiceDependencies:
     metadata = _FakeMetadataStore()
 
@@ -128,17 +124,18 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
     )
 
-<<<<<<< Updated upstream
     await assign_scheduled_automation_delegation(
-        _admin(), TeamId("fredlab"), request, _deps(rebac)
+        _admin(),
+        TeamId("fredlab"),
+        request,
+        _deps(rebac, audit_records=audit_records),
     )
     await assign_scheduled_automation_delegation(
-        _admin(), TeamId("fredlab"), request, _deps(rebac)
+        _admin(),
+        TeamId("fredlab"),
+        request,
+        _deps(rebac, audit_records=audit_records),
     )
-=======
-    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
-    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
->>>>>>> Stashed changes
 
     listed = await list_scheduled_automation_delegations(
         _admin(), TeamId("fredlab"), _deps(rebac)
@@ -155,12 +152,17 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         (TeamPermission.CAN_ADMINISTER_ADMINS,),
     )
 
-<<<<<<< Updated upstream
     await revoke_scheduled_automation_delegation(
-        _admin(), TeamId("fredlab"), request, _deps(rebac)
+        _admin(),
+        TeamId("fredlab"),
+        request,
+        _deps(rebac, audit_records=audit_records),
     )
     await revoke_scheduled_automation_delegation(
-        _admin(), TeamId("fredlab"), request, _deps(rebac)
+        _admin(),
+        TeamId("fredlab"),
+        request,
+        _deps(rebac, audit_records=audit_records),
     )
 
     assert (
@@ -169,18 +171,12 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         )
         == []
     )
-=======
-    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
-    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(rebac, audit_records=audit_records))
-
-    assert await list_scheduled_automation_delegations(_admin(), TeamId("fredlab"), _deps(rebac)) == []
     assert [record.action for record in audit_records] == ["assign", "assign", "revoke", "revoke"]
     assert {record.human_admin_subject for record in audit_records} == {"human-admin-sub"}
     assert {record.service_client_id for record in audit_records} == {"fred-ai-wiki-worker"}
     assert {record.service_subject for record in audit_records} == {"service-account-sub"}
     assert {record.team_id for record in audit_records} == {"fredlab"}
     assert {record.result for record in audit_records} == {"succeeded"}
->>>>>>> Stashed changes
 
 
 @pytest.mark.asyncio
@@ -239,15 +235,12 @@ async def test_scheduled_automation_delegation_requires_resolved_service_account
     )
 
     with pytest.raises(ValueError):
-<<<<<<< Updated upstream
         await assign_scheduled_automation_delegation(
             _admin(),
             TeamId("fredlab"),
             request,
             _deps(_FakeRebac(), service_subject=None),
         )
-=======
-        await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, _deps(_FakeRebac(), service_subject=None))
 
 
 @pytest.mark.asyncio
@@ -258,7 +251,10 @@ async def test_scheduled_automation_service_identity_cannot_manage_delegations()
     )
 
     with pytest.raises(PermissionError):
-        await assign_scheduled_automation_delegation(_service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac()))
+        await assign_scheduled_automation_delegation(
+            _service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac())
+        )
     with pytest.raises(PermissionError):
-        await revoke_scheduled_automation_delegation(_service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac()))
->>>>>>> Stashed changes
+        await revoke_scheduled_automation_delegation(
+            _service_agent(), TeamId("fredlab"), request, _deps(_FakeRebac())
+        )

@@ -90,14 +90,12 @@ class TeamServiceDependencies:
     get_policy_catalog: Callable[[], ConversationPolicyCatalog]
     get_users_by_ids: UserSummaryLookup
     run_lifecycle_manager_once_in_memory: LifecycleRunner
-<<<<<<< Updated upstream
     resolve_service_account_subject: ServiceAccountSubjectResolver = (
         _default_service_account_subject_resolver
     )
-=======
-    resolve_service_account_subject: ServiceAccountSubjectResolver = _default_service_account_subject_resolver
-    append_scheduled_automation_audit: ScheduledAutomationAuditAppender = _default_scheduled_automation_audit_appender
->>>>>>> Stashed changes
+    append_scheduled_automation_audit: ScheduledAutomationAuditAppender = (
+        _default_scheduled_automation_audit_appender
+    )
 
 
 def build_team_service_dependencies(
