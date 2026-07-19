@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import uuid4
 
 from fred_core.sql import make_session_factory, use_session
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from control_plane_backend.models.scheduled_automation_audit_models import ScheduledAutomationDelegationAuditRow
@@ -18,6 +20,19 @@ class ScheduledAutomationDelegationAuditRecord:
     team_id: str
     relation: str
     result: str
+
+
+@dataclass(frozen=True)
+class ScheduledAutomationDelegationAuditView:
+    id: str
+    human_admin_subject: str
+    action: str
+    service_client_id: str
+    service_subject: str
+    team_id: str
+    relation: str
+    result: str
+    created_at: datetime
 
 
 class ScheduledAutomationDelegationAuditStore:
@@ -43,3 +58,44 @@ class ScheduledAutomationDelegationAuditStore:
             )
             s.add(row)
             return row.id
+
+    async def list_for_team(
+        self,
+        *,
+        team_id: str,
+        service_client_id: str,
+        action: str | None = None,
+        created_after: datetime | None = None,
+        limit: int = 50,
+        session: AsyncSession | None = None,
+    ) -> list[ScheduledAutomationDelegationAuditView]:
+        bounded_limit = max(1, min(limit, 100))
+        stmt = (
+            select(ScheduledAutomationDelegationAuditRow)
+            .where(
+                ScheduledAutomationDelegationAuditRow.team_id == team_id,
+                ScheduledAutomationDelegationAuditRow.service_client_id == service_client_id,
+            )
+            .order_by(ScheduledAutomationDelegationAuditRow.created_at.desc())
+            .limit(bounded_limit)
+        )
+        if action is not None:
+            stmt = stmt.where(ScheduledAutomationDelegationAuditRow.action == action)
+        if created_after is not None:
+            stmt = stmt.where(ScheduledAutomationDelegationAuditRow.created_at >= created_after)
+        async with use_session(self._sessions, session) as s:
+            rows = list((await s.scalars(stmt)).all())
+        return [
+            ScheduledAutomationDelegationAuditView(
+                id=row.id,
+                human_admin_subject=row.human_admin_subject,
+                action=row.action,
+                service_client_id=row.service_client_id,
+                service_subject=row.service_subject,
+                team_id=row.team_id,
+                relation=row.relation,
+                result=row.result,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]

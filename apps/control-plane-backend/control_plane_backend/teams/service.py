@@ -53,6 +53,7 @@ from control_plane_backend.teams.schemas import (
     RetentionFieldView,
     RetentionUpdateError,
     ScheduledAutomationDelegation,
+    ScheduledAutomationDelegationAudit,
     ScheduledAutomationDelegationRelation,
     ScheduledAutomationDelegationRequest,
     Team,
@@ -1053,6 +1054,54 @@ async def list_scheduled_automation_delegations(
                 )
             )
     return delegations
+
+
+async def list_scheduled_automation_delegation_audit(
+    user: KeycloakUser,
+    team_id: TeamId,
+    deps: TeamServiceDependencies,
+    *,
+    service_client_id: str,
+    action: str | None = None,
+    created_after: datetime | None = None,
+    limit: int = 50,
+) -> list[ScheduledAutomationDelegationAudit]:
+    if is_service_agent(user):
+        raise PermissionError(
+            "Service identities cannot read scheduled automation delegation audit"
+        )
+    if service_client_id != _AI_WIKI_WORKER_SERVICE_CLIENT_ID:
+        raise ValueError("Unsupported scheduled automation service client")
+    if action is not None and action not in {"assign", "revoke"}:
+        raise ValueError("Unsupported scheduled automation audit action")
+    await _validate_team_and_check_permission(
+        user,
+        team_id,
+        deps.rebac,
+        [TeamPermission.CAN_ADMINISTER_ADMINS],
+        deps,
+    )
+    rows = await deps.list_scheduled_automation_audit(
+        str(team_id),
+        service_client_id,
+        action,
+        created_after,
+        limit,
+    )
+    return [
+        ScheduledAutomationDelegationAudit(
+            id=row.id,
+            human_admin_subject=row.human_admin_subject,
+            action=row.action,  # type: ignore[arg-type]
+            service_client_id=row.service_client_id,
+            service_subject=row.service_subject,
+            team_id=row.team_id,
+            relation=ScheduledAutomationDelegationRelation(row.relation),
+            result=row.result,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 async def assign_scheduled_automation_delegation(

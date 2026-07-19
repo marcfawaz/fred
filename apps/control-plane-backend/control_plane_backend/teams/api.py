@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, File, Path, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Path, Query, UploadFile
 from fastapi.responses import JSONResponse
 from fred_core import AuthorizationError, KeycloakUser, get_current_user
 from fred_core.common import TeamId
@@ -18,6 +19,7 @@ from control_plane_backend.teams.schemas import (
     RescueTeamAdminRequest,
     RetentionUpdateError,
     ScheduledAutomationDelegation,
+    ScheduledAutomationDelegationAudit,
     ScheduledAutomationDelegationRequest,
     Team,
     TeamAdminConstraintError,
@@ -44,6 +46,9 @@ from control_plane_backend.teams.service import (
 )
 from control_plane_backend.teams.service import (
     list_scheduled_automation_delegations as list_scheduled_automation_delegations_from_service,
+)
+from control_plane_backend.teams.service import (
+    list_scheduled_automation_delegation_audit as list_scheduled_automation_delegation_audit_from_service,
 )
 from control_plane_backend.teams.service import (
     grant_team_member_role as grant_team_member_role_from_service,
@@ -349,6 +354,32 @@ async def list_scheduled_automation_delegations(
     user: KeycloakUser = Depends(get_current_user),
 ) -> list[ScheduledAutomationDelegation]:
     return await list_scheduled_automation_delegations_from_service(user, team_id, deps)
+
+
+@router.get(
+    "/teams/{team_id}/scheduled-automation-delegations/audit",
+    response_model=list[ScheduledAutomationDelegationAudit],
+    response_model_exclude_none=True,
+    summary="List sanitized AI Wiki scheduled-automation delegation audit for one team",
+)
+async def list_scheduled_automation_delegation_audit(
+    team_id: Annotated[TeamId, Path()],
+    deps: TeamDependencies,
+    service_client_id: str = Query(default="fred-ai-wiki-worker"),
+    action: str | None = Query(default=None, pattern="^(assign|revoke)$"),
+    created_after: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    user: KeycloakUser = Depends(get_current_user),
+) -> list[ScheduledAutomationDelegationAudit]:
+    return await list_scheduled_automation_delegation_audit_from_service(
+        user,
+        team_id,
+        deps,
+        service_client_id=service_client_id,
+        action=action,
+        created_after=created_after,
+        limit=limit,
+    )
 
 
 @router.post(

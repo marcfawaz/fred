@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Awaitable, Callable, Iterable, TypeAlias
 
 from fastapi import Request
@@ -30,6 +31,7 @@ from control_plane_backend.scheduler.temporal.structures import (
 from control_plane_backend.teams.scheduled_automation_audit_store import (
     ScheduledAutomationDelegationAuditRecord,
     ScheduledAutomationDelegationAuditStore,
+    ScheduledAutomationDelegationAuditView,
 )
 from control_plane_backend.users.dependencies import build_user_service_dependencies
 from control_plane_backend.users.schemas import UserSummary
@@ -51,6 +53,10 @@ ScheduledAutomationAuditAppender: TypeAlias = Callable[
     [ScheduledAutomationDelegationAuditRecord],
     Awaitable[None],
 ]
+ScheduledAutomationAuditLister: TypeAlias = Callable[
+    [str, str, str | None, datetime | None, int],
+    Awaitable[list[ScheduledAutomationDelegationAuditView]],
+]
 
 
 async def _default_service_account_subject_resolver(_client_id: str) -> str | None:
@@ -59,6 +65,16 @@ async def _default_service_account_subject_resolver(_client_id: str) -> str | No
 
 async def _default_scheduled_automation_audit_appender(_record: ScheduledAutomationDelegationAuditRecord) -> None:
     return None
+
+
+async def _default_scheduled_automation_audit_lister(
+    _team_id: str,
+    _service_client_id: str,
+    _action: str | None,
+    _created_after: datetime | None,
+    _limit: int,
+) -> list[ScheduledAutomationDelegationAuditView]:
+    return []
 
 
 @dataclass(slots=True)
@@ -95,6 +111,9 @@ class TeamServiceDependencies:
     )
     append_scheduled_automation_audit: ScheduledAutomationAuditAppender = (
         _default_scheduled_automation_audit_appender
+    )
+    list_scheduled_automation_audit: ScheduledAutomationAuditLister = (
+        _default_scheduled_automation_audit_lister
     )
 
 
@@ -159,6 +178,21 @@ def build_team_service_dependencies(
     async def _append_scheduled_automation_audit(record: ScheduledAutomationDelegationAuditRecord) -> None:
         await scheduled_audit_store.append(record)
 
+    async def _list_scheduled_automation_audit(
+        team_id: str,
+        service_client_id: str,
+        action: str | None,
+        created_after: datetime | None,
+        limit: int,
+    ) -> list[ScheduledAutomationDelegationAuditView]:
+        return await scheduled_audit_store.list_for_team(
+            team_id=team_id,
+            service_client_id=service_client_id,
+            action=action,
+            created_after=created_after,
+            limit=limit,
+        )
+
     if lifecycle_runner is None:
         lifecycle_deps = build_lifecycle_action_dependencies(container)
 
@@ -200,6 +234,7 @@ def build_team_service_dependencies(
         run_lifecycle_manager_once_in_memory=lifecycle_runner,
         resolve_service_account_subject=_resolve_service_account_subject,
         append_scheduled_automation_audit=_append_scheduled_automation_audit,
+        list_scheduled_automation_audit=_list_scheduled_automation_audit,
     )
 
 

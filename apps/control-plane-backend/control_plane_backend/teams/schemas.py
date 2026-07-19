@@ -189,6 +189,18 @@ class ScheduledAutomationDelegation(BaseModel):
     relation: ScheduledAutomationDelegationRelation
 
 
+class ScheduledAutomationDelegationAudit(BaseModel):
+    id: str
+    human_admin_subject: str
+    action: Literal["assign", "revoke"]
+    service_client_id: str
+    service_subject: str
+    team_id: str
+    relation: ScheduledAutomationDelegationRelation
+    result: str
+    created_at: datetime
+
+
 class ScheduledAutomationDelegationRequest(BaseModel):
     service_client_id: str = Field(min_length=1)
     relation: ScheduledAutomationDelegationRelation
