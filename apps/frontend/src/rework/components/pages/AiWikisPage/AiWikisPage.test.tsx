@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationContext } from "../../../../app/ApplicationContextProvider";
 import AiWikisPage, {
+  buildAiWikisAuthVersion,
   buildAiWikisIframeSrc,
   buildFredLanguageMessage,
   buildFredThemeMessage,
@@ -51,6 +52,18 @@ vi.mock("../../../core/hooks/useTeamCapabilities", () => ({
   })),
 }));
 
+vi.mock("../../../../security/KeycloakService", () => ({
+  KeyCloakService: {
+    GetTokenParsed: vi.fn(() => ({
+      sub: "priya-subject",
+      preferred_username: "priya",
+      iat: 123,
+      sid: "session-a",
+    })),
+    GetUserId: vi.fn(() => "priya-subject"),
+  },
+}));
+
 function renderAt(path: string) {
   return renderToStaticMarkup(
     <ApplicationContext.Provider
@@ -88,9 +101,13 @@ describe("AiWikisPage", () => {
 
   it("renders an iframe for the team root route", () => {
     const html = renderAt("/team/team-42/wikis");
+    const authVersion = buildAiWikisAuthVersion(
+      { sub: "priya-subject", preferred_username: "priya", iat: 123, sid: "session-a" },
+      "priya-subject",
+    );
     expect(html).toContain("<iframe");
     expect(html).toContain('title="AI Wikis"');
-    expect(html).toContain('src="/ai-wikis/embed/team/team-42?theme=dark&amp;themeMode=dark&amp;lng=en"');
+    expect(html).toContain(`src="/ai-wikis/embed/team/team-42?theme=dark&amp;themeMode=dark&amp;lng=en&amp;authv=${authVersion}"`);
   });
 
   it("does not render the iframe for a collaborative team without canReadWikis", () => {
@@ -118,14 +135,14 @@ describe("AiWikisPage", () => {
     const html = renderAt("/team/personal/wikis");
 
     expect(html).toContain("<iframe");
-    expect(html).toContain('src="/ai-wikis/embed/team/personal?theme=dark&amp;themeMode=dark&amp;lng=en"');
+    expect(html).toContain('src="/ai-wikis/embed/team/personal?theme=dark&amp;themeMode=dark&amp;lng=en&amp;authv=');
   });
 
   it("preserves the nested wiki subpath and query string", () => {
     currentLanguage = "fr";
     const html = renderAt("/team/team-42/wikis/wiki-123/pages/page-456?view=compact");
     expect(html).toContain(
-      'src="/ai-wikis/embed/team/team-42/wiki-123/pages/page-456?view=compact&amp;theme=dark&amp;themeMode=dark&amp;lng=fr"',
+      'src="/ai-wikis/embed/team/team-42/wiki-123/pages/page-456?view=compact&amp;theme=dark&amp;themeMode=dark&amp;lng=fr&amp;authv=',
     );
   });
 
@@ -133,7 +150,7 @@ describe("AiWikisPage", () => {
     currentLanguage = "en";
     const html = renderAt("/team/team space/wikis/wiki folder/pages/page name");
     expect(html).toContain(
-      'src="/ai-wikis/embed/team/team%20space/wiki%20folder/pages/page%20name?theme=dark&amp;themeMode=dark&amp;lng=en"',
+      'src="/ai-wikis/embed/team/team%20space/wiki%20folder/pages/page%20name?theme=dark&amp;themeMode=dark&amp;lng=en&amp;authv=',
     );
   });
 
@@ -147,8 +164,18 @@ describe("AiWikisPage", () => {
         themeMode: "system",
         darkMode: true,
         language: "fr",
+        authVersion: "auth-1",
       }),
-    ).toBe("/ai-wikis/embed/team/team-42/wiki-123/pages/page-456?view=compact&theme=dark&themeMode=system&lng=fr");
+    ).toBe("/ai-wikis/embed/team/team-42/wiki-123/pages/page-456?view=compact&theme=dark&themeMode=system&lng=fr&authv=auth-1");
+  });
+
+  it("builds a non-secret auth version from identity and session claims", () => {
+    const first = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100, sid: "session-a" }, "fallback");
+    const second = buildAiWikisAuthVersion({ sub: "user-b", preferred_username: "elena", iat: 101, sid: "session-b" }, "fallback");
+
+    expect(first).not.toBe(second);
+    expect(first).not.toContain("user-a");
+    expect(second).not.toContain("elena");
   });
 
   it("returns same-origin target for relative iframe urls", () => {

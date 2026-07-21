@@ -22,6 +22,7 @@ import { getProperty } from "../../../../common/config";
 import { useSelectedTeam } from "../../../../hooks/useSelectedTeam";
 import { useTeamCapabilities } from "../../../core/hooks/useTeamCapabilities";
 import { isPersonalTeamId } from "@shared/utils/teamId";
+import { KeyCloakService } from "../../../../security/KeycloakService";
 
 function normalizeFrontendUrl(url: string): string {
   if (!url || url === "/") {
@@ -78,6 +79,26 @@ export function buildFredLanguageMessage(language: FredLanguage): FredLanguageMe
   };
 }
 
+function stableIdentityHash(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export function buildAiWikisAuthVersion(tokenPayload: Record<string, unknown> | null | undefined, fallbackUserId?: string | null): string {
+  const subject = typeof tokenPayload?.sub === "string" && tokenPayload.sub ? tokenPayload.sub : fallbackUserId ?? "anonymous";
+  const username = typeof tokenPayload?.preferred_username === "string" ? tokenPayload.preferred_username : "";
+  const issuedAt = typeof tokenPayload?.iat === "number" || typeof tokenPayload?.iat === "string" ? String(tokenPayload.iat) : "";
+  const sessionId = typeof tokenPayload?.sid === "string"
+    ? tokenPayload.sid
+    : typeof tokenPayload?.session_state === "string"
+      ? tokenPayload.session_state
+      : "";
+  return stableIdentityHash([subject, username, issuedAt, sessionId].join(":"));
+}
+
 export function getAiWikisTargetOrigin(aiWikisFrontendUrl: string, currentOrigin: string): string {
   return resolveAiWikisFrontendUrl(aiWikisFrontendUrl, currentOrigin).targetOrigin;
 }
@@ -119,6 +140,7 @@ export function buildAiWikisIframeSrc({
   themeMode,
   darkMode,
   language,
+  authVersion,
 }: {
   aiWikisFrontendUrl: string;
   teamId: string;
@@ -127,6 +149,7 @@ export function buildAiWikisIframeSrc({
   themeMode: ThemeMode;
   darkMode: boolean;
   language: FredLanguage;
+  authVersion?: string;
 }) {
   const resolved = resolveAiWikisFrontendUrl(
     aiWikisFrontendUrl || "/ai-wikis",
@@ -142,6 +165,9 @@ export function buildAiWikisIframeSrc({
   params.set("theme", darkMode ? "dark" : "light");
   params.set("themeMode", themeMode);
   params.set("lng", language);
+  if (authVersion) {
+    params.set("authv", authVersion);
+  }
   const normalizedSearch = params.size > 0 ? `?${params.toString()}` : "";
   if (baseUrl === "/") {
     return `/embed/team/${encodedTeamId}${encodedSplatPath}${normalizedSearch}`;
@@ -166,6 +192,7 @@ export default function AiWikisPage() {
   );
   const sameOriginConfigurationError = resolvedAiWikisFrontendUrl.valid ? null : resolvedAiWikisFrontendUrl.error;
   const language = useMemo(() => normalizeFredLanguage(i18n.language), [i18n.language]);
+  const authVersion = buildAiWikisAuthVersion(KeyCloakService.GetTokenParsed?.(), KeyCloakService.GetUserId?.());
   const themeMessage = useMemo(() => buildFredThemeMessage(themeMode, darkMode), [themeMode, darkMode]);
   const languageMessage = useMemo(() => buildFredLanguageMessage(language), [language]);
   const iframeSrc = useMemo(
@@ -178,8 +205,9 @@ export default function AiWikisPage() {
         themeMode,
         darkMode,
         language,
+        authVersion,
       }),
-    [aiWikisFrontendUrl, darkMode, language, location.search, splatPath, teamId, themeMode],
+    [aiWikisFrontendUrl, authVersion, darkMode, language, location.search, splatPath, teamId, themeMode],
   );
   const targetOrigin = resolvedAiWikisFrontendUrl.targetOrigin;
 
@@ -225,6 +253,7 @@ export default function AiWikisPage() {
     >
       <Box
         component="iframe"
+        key={authVersion}
         ref={iframeRef}
         title="AI Wikis"
         src={iframeSrc}
