@@ -178,6 +178,34 @@ describe("AiWikisPage", () => {
     expect(second).not.toContain("elena");
   });
 
+  it("keeps the same auth version for routine token refresh in the same session", () => {
+    const first = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100, sid: "session-a" }, "fallback");
+    const refreshed = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 200, sid: "session-a" }, "fallback");
+
+    expect(refreshed).toBe(first);
+  });
+
+  it("changes auth version for a new session", () => {
+    const first = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100, sid: "session-a" }, "fallback");
+    const nextSession = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100, sid: "session-b" }, "fallback");
+
+    expect(nextSession).not.toBe(first);
+  });
+
+  it("changes auth version for a different subject", () => {
+    const first = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100, sid: "session-a" }, "fallback");
+    const differentSubject = buildAiWikisAuthVersion({ sub: "user-b", preferred_username: "elena", iat: 100, sid: "session-a" }, "fallback");
+
+    expect(differentSubject).not.toBe(first);
+  });
+
+  it("falls back to issued-at when no session claim exists", () => {
+    const first = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 100 }, "fallback");
+    const refreshed = buildAiWikisAuthVersion({ sub: "user-a", preferred_username: "priya", iat: 200 }, "fallback");
+
+    expect(refreshed).not.toBe(first);
+  });
+
   it("returns same-origin target for relative iframe urls", () => {
     expect(getAiWikisTargetOrigin("/ai-wikis", "http://localhost:5173")).toBe("http://localhost:5173");
   });

@@ -96,7 +96,7 @@ export function buildAiWikisAuthVersion(tokenPayload: Record<string, unknown> | 
     : typeof tokenPayload?.session_state === "string"
       ? tokenPayload.session_state
       : "";
-  return stableIdentityHash([subject, username, issuedAt, sessionId].join(":"));
+  return stableIdentityHash([subject, username, sessionId || issuedAt].join(":"));
 }
 
 export function getAiWikisTargetOrigin(aiWikisFrontendUrl: string, currentOrigin: string): string {
