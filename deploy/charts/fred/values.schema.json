@@ -135,6 +135,9 @@
                 },
                 "resources": {
                   "type": "object"
+                },
+                "podAnnotations": {
+                  "type": "object"
                 }
               },
               "additionalProperties": false
@@ -534,6 +537,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -639,6 +724,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -1073,6 +1164,11 @@
                           ],
                           "default": null,
                           "title": "Pool"
+                        },
+                        "summarize_read": {
+                          "default": 300.0,
+                          "title": "Summarize Read",
+                          "type": "number"
                         }
                       },
                       "title": "RuntimeTimeouts",
@@ -1701,6 +1797,9 @@
                 },
                 "resources": {
                   "type": "object"
+                },
+                "podAnnotations": {
+                  "type": "object"
                 }
               },
               "additionalProperties": false
@@ -2100,6 +2199,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -2205,6 +2386,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -2393,6 +2580,9 @@
                 },
                 "resources": {
                   "type": "object"
+                },
+                "podAnnotations": {
+                  "type": "object"
                 }
               },
               "additionalProperties": false
@@ -2792,6 +2982,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -2897,6 +3169,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -4283,6 +4561,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -4444,6 +4729,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -4605,6 +4897,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -6221,6 +6520,12 @@
                           "title": "Compression",
                           "type": "string"
                         },
+                        "pointer_chunks_enabled": {
+                          "default": false,
+                          "description": "Emit one synthetic 'dataset pointer' chunk per tabular dataset into the shared vector index, so semantic search can discover a dataset exists and route agents to the SQL/tabular tool (RAG-DATASET-DISCOVERY-RFC.md). Off by default for measured, gradual activation.",
+                          "title": "Pointer Chunks Enabled",
+                          "type": "boolean"
+                        },
                         "query": {
                           "description": "Runtime settings for dataset-centric SQL queries.\n\nWhy this exists:\n- Tabular querying now runs on transient Parquet datasets rather than\n  long-lived SQL tables.\n- These values keep query execution bounded and configurable from YAML.\n\nHow to use:\n- Keep the default `duckdb` engine.\n- Tune result limits and backend-internal presigned URL TTL per deployment.",
                           "properties": {
@@ -6276,8 +6581,7 @@
                           "clickhouse": "#/$defs/ClickHouseVectorStorageConfig",
                           "in_memory": "#/$defs/InMemoryVectorStorage",
                           "opensearch": "#/$defs/OpenSearchVectorIndexConfig",
-                          "pgvector": "#/$defs/PgVectorStorageConfig",
-                          "weaviate": "#/$defs/WeaviateVectorStorage"
+                          "pgvector": "#/$defs/PgVectorStorageConfig"
                         },
                         "propertyName": "type"
                       },
@@ -6360,33 +6664,6 @@
                             "type"
                           ],
                           "title": "ChromaVectorStorageConfig",
-                          "type": "object",
-                          "additionalProperties": false
-                        },
-                        {
-                          "properties": {
-                            "type": {
-                              "const": "weaviate",
-                              "title": "Type",
-                              "type": "string"
-                            },
-                            "host": {
-                              "default": "https://localhost:8080",
-                              "description": "Weaviate host",
-                              "title": "Host",
-                              "type": "string"
-                            },
-                            "index_name": {
-                              "default": "CodeDocuments",
-                              "description": "Weaviate class (collection) name",
-                              "title": "Index Name",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ],
-                          "title": "WeaviateVectorStorage",
                           "type": "object",
                           "additionalProperties": false
                         },
@@ -6547,12 +6824,6 @@
                       "default": true,
                       "description": "Expose the Tabular MCP server for SQL/table exploration.",
                       "title": "Tabular Enabled",
-                      "type": "boolean"
-                    },
-                    "statistic_enabled": {
-                      "default": true,
-                      "description": "Expose the Statistical MCP server for data analysis helpers.",
-                      "title": "Statistic Enabled",
                       "type": "boolean"
                     },
                     "text_enabled": {
@@ -6846,6 +7117,9 @@
                 },
                 "resources": {
                   "type": "object"
+                },
+                "podAnnotations": {
+                  "type": "object"
                 }
               },
               "additionalProperties": false
@@ -7245,6 +7519,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -7350,6 +7706,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -8736,6 +9098,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -8897,6 +9266,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -9058,6 +9434,13 @@
                                   "description": "Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
                                   "title": "Do Ocr",
                                   "type": "boolean"
+                                },
+                                "docling_num_threads": {
+                                  "default": 4,
+                                  "description": "OMP/accelerator threads docling uses per PDF extraction. Tune down when scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
+                                  "minimum": 1,
+                                  "title": "Docling Num Threads",
+                                  "type": "integer"
                                 }
                               },
                               "title": "PdfPipelineConfig",
@@ -10674,6 +11057,12 @@
                           "title": "Compression",
                           "type": "string"
                         },
+                        "pointer_chunks_enabled": {
+                          "default": false,
+                          "description": "Emit one synthetic 'dataset pointer' chunk per tabular dataset into the shared vector index, so semantic search can discover a dataset exists and route agents to the SQL/tabular tool (RAG-DATASET-DISCOVERY-RFC.md). Off by default for measured, gradual activation.",
+                          "title": "Pointer Chunks Enabled",
+                          "type": "boolean"
+                        },
                         "query": {
                           "description": "Runtime settings for dataset-centric SQL queries.\n\nWhy this exists:\n- Tabular querying now runs on transient Parquet datasets rather than\n  long-lived SQL tables.\n- These values keep query execution bounded and configurable from YAML.\n\nHow to use:\n- Keep the default `duckdb` engine.\n- Tune result limits and backend-internal presigned URL TTL per deployment.",
                           "properties": {
@@ -10729,8 +11118,7 @@
                           "clickhouse": "#/$defs/ClickHouseVectorStorageConfig",
                           "in_memory": "#/$defs/InMemoryVectorStorage",
                           "opensearch": "#/$defs/OpenSearchVectorIndexConfig",
-                          "pgvector": "#/$defs/PgVectorStorageConfig",
-                          "weaviate": "#/$defs/WeaviateVectorStorage"
+                          "pgvector": "#/$defs/PgVectorStorageConfig"
                         },
                         "propertyName": "type"
                       },
@@ -10813,33 +11201,6 @@
                             "type"
                           ],
                           "title": "ChromaVectorStorageConfig",
-                          "type": "object",
-                          "additionalProperties": false
-                        },
-                        {
-                          "properties": {
-                            "type": {
-                              "const": "weaviate",
-                              "title": "Type",
-                              "type": "string"
-                            },
-                            "host": {
-                              "default": "https://localhost:8080",
-                              "description": "Weaviate host",
-                              "title": "Host",
-                              "type": "string"
-                            },
-                            "index_name": {
-                              "default": "CodeDocuments",
-                              "description": "Weaviate class (collection) name",
-                              "title": "Index Name",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ],
-                          "title": "WeaviateVectorStorage",
                           "type": "object",
                           "additionalProperties": false
                         },
@@ -11000,12 +11361,6 @@
                       "default": true,
                       "description": "Expose the Tabular MCP server for SQL/table exploration.",
                       "title": "Tabular Enabled",
-                      "type": "boolean"
-                    },
-                    "statistic_enabled": {
-                      "default": true,
-                      "description": "Expose the Statistical MCP server for data analysis helpers.",
-                      "title": "Statistic Enabled",
                       "type": "boolean"
                     },
                     "text_enabled": {
@@ -11298,6 +11653,9 @@
                   }
                 },
                 "resources": {
+                  "type": "object"
+                },
+                "podAnnotations": {
                   "type": "object"
                 }
               },
@@ -11698,6 +12056,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -11803,6 +12243,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -12589,6 +13035,7 @@
                     "content_storage": {
                       "discriminator": {
                         "mapping": {
+                          "gcs": "#/$defs/GcsContentStorageConfig",
                           "local": "#/$defs/LocalContentStorageConfig",
                           "minio": "#/$defs/MinioContentStorageConfig"
                         },
@@ -12688,6 +13135,54 @@
                             "access_key"
                           ],
                           "title": "MinioContentStorageConfig",
+                          "type": "object",
+                          "additionalProperties": false
+                        },
+                        {
+                          "description": "Google Cloud Storage content store. Authentication uses Application Default\nCredentials / Workload Identity (no JSON key required).",
+                          "properties": {
+                            "type": {
+                              "const": "gcs",
+                              "title": "Type",
+                              "type": "string"
+                            },
+                            "bucket_name": {
+                              "default": "control-plane-content",
+                              "description": "Content store bucket name (suffix '-objects' is used for banner objects)",
+                              "title": "Bucket Name",
+                              "type": "string"
+                            },
+                            "project_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null,
+                              "description": "GCP project id; inferred from ADC when empty.",
+                              "title": "Project Id"
+                            },
+                            "signing_service_account_email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null,
+                              "description": "Service account email used to sign V4 signed URLs for browser-facing banner/logo images, via IAM signBlob under Workload Identity (no JSON key). Required for content_storage.type=gcs; startup fails clearly when omitted. The Workload Identity service account must hold iam.serviceAccounts.signBlob on this account, which must have storage.objects.get on the objects bucket.",
+                              "title": "Signing Service Account Email"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "title": "GcsContentStorageConfig",
                           "type": "object",
                           "additionalProperties": false
                         }
@@ -13077,6 +13572,9 @@
                 },
                 "resources": {
                   "type": "object"
+                },
+                "podAnnotations": {
+                  "type": "object"
                 }
               },
               "additionalProperties": false
@@ -13476,6 +13974,88 @@
                 "additionalProperties": true
               }
             },
+            "extraVolumeMounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "type": "string"
+                  },
+                  "subPath": {
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object"
+                },
+                "requests": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            "imagePullSecrets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "podAnnotations": {
+              "type": "object"
+            },
+            "podSecurityContext": {
+              "type": "object"
+            },
+            "envFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              }
+            },
             "probes": {
               "type": "object",
               "properties": {
@@ -13581,6 +14161,12 @@
             "serviceAccount": {
               "type": "object",
               "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "annotations": {
                   "type": "object"
                 },
@@ -14367,6 +14953,7 @@
                     "content_storage": {
                       "discriminator": {
                         "mapping": {
+                          "gcs": "#/$defs/GcsContentStorageConfig",
                           "local": "#/$defs/LocalContentStorageConfig",
                           "minio": "#/$defs/MinioContentStorageConfig"
                         },
@@ -14466,6 +15053,54 @@
                             "access_key"
                           ],
                           "title": "MinioContentStorageConfig",
+                          "type": "object",
+                          "additionalProperties": false
+                        },
+                        {
+                          "description": "Google Cloud Storage content store. Authentication uses Application Default\nCredentials / Workload Identity (no JSON key required).",
+                          "properties": {
+                            "type": {
+                              "const": "gcs",
+                              "title": "Type",
+                              "type": "string"
+                            },
+                            "bucket_name": {
+                              "default": "control-plane-content",
+                              "description": "Content store bucket name (suffix '-objects' is used for banner objects)",
+                              "title": "Bucket Name",
+                              "type": "string"
+                            },
+                            "project_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null,
+                              "description": "GCP project id; inferred from ADC when empty.",
+                              "title": "Project Id"
+                            },
+                            "signing_service_account_email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null,
+                              "description": "Service account email used to sign V4 signed URLs for browser-facing banner/logo images, via IAM signBlob under Workload Identity (no JSON key). Required for content_storage.type=gcs; startup fails clearly when omitted. The Workload Identity service account must hold iam.serviceAccounts.signBlob on this account, which must have storage.objects.get on the objects bucket.",
+                              "title": "Signing Service Account Email"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "title": "GcsContentStorageConfig",
                           "type": "object",
                           "additionalProperties": false
                         }

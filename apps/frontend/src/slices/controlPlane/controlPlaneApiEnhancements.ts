@@ -157,6 +157,8 @@ export const enhancedControlPlaneApi = api.enhanceEndpoints({
 
 export const {
   useListUsersControlPlaneV1UsersGetQuery: useListUsersQuery,
+  // Batch uid → display-name resolution for audit fields (#1952).
+  useGetUsersByIdsControlPlaneV1UsersByIdsGetQuery: useUsersByIdsQuery,
   useListTeamsControlPlaneV1TeamsGetQuery: useListTeamsQuery,
   useListAllTeamsControlPlaneV1TeamsAllGetQuery: useListAllTeamsQuery,
   useGetTeamControlPlaneV1TeamsTeamIdGetQuery: useGetTeamQuery,
@@ -165,6 +167,9 @@ export const {
   useUploadTeamBannerControlPlaneV1TeamsTeamIdBannerPostMutation: useUploadTeamBannerMutation,
   useListTeamMembersControlPlaneV1TeamsTeamIdMembersGetQuery: useListTeamMembersQuery,
   useAddTeamMemberControlPlaneV1TeamsTeamIdMembersPostMutation: useAddTeamMemberMutation,
+  useSearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetQuery: useSearchCandidateTeamMembersQuery,
+  useLazySearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetQuery:
+    useLazySearchCandidateTeamMembersQuery,
   useGrantTeamMemberRoleControlPlaneV1TeamsTeamIdMembersUserIdRolesPostMutation: useGrantTeamMemberRoleMutation,
   useRevokeTeamMemberRoleControlPlaneV1TeamsTeamIdMembersUserIdRolesRelationDeleteMutation:
     useRevokeTeamMemberRoleMutation,

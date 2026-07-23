@@ -1218,3 +1218,110 @@ updated in the same change from `admin from organization` to `platform_admin
 from organization`, matching every other org-admin-tier capability. No route
 shape or request/response change — enforcement now resolves through
 `platform_admin` instead of the retired `admin` relation.
+
+**2026-07-19 — `depends_on` gate for `kind="agent"` capabilities (GitHub
+#2004, CTRLP-14; design in `AGENT-CAPABILITY-RFC.md` §8.6).**
+`CapabilityCatalogEntry` gained `default_capability_ids: tuple[str, ...]`
+(the template's default tool/MCP capabilities, empty for `kind="tool"`).
+`PUT /admin/capabilities/{capability_id}/teams/{team_id}` and
+`PUT .../personal-scope` (`scope="enabled"`) now also 409 for a `kind="agent"`
+entry when the team (or, for personal-scope, every personal space) isn't
+already `can_use` on all of its `default_capability_ids` — prevents enabling
+an agent whose tools aren't granted yet. `PATCH /teams/{team_id}/agent-instances/{id}`
+now 403s once the instance's own template grant is revoked (previously only
+*tool* capability selections were re-checked on update; unenroll is still
+always allowed).
+
+## 18. Contract Notes — team-scoped candidate-member search (2026-07-20)
+
+**New endpoint:** `GET /teams/{team_id}/candidate-members?query=<string>` →
+`list[UserSummary]`. Gated on `can_administer_members` for `team_id` (owner-only,
+no platform escalation — `FRED-AUTHORIZATION-TARGET-MODEL-RFC.md` §24.7/§24.9).
+`query` is required, `min_length=2`, enforced server-side. Returns Keycloak users
+matching the query, excluding anyone already holding any role on the team.
+
+**Why:** the existing `GET /users` listing is intentionally `platform_admin`-only
+(`§24.9`); team admins need a way to find someone to invite without widening that
+org-wide listing to every team admin. `TeamSettingsMembers.tsx`'s "add member"
+search now calls this endpoint (`useSearchCandidateTeamMembersQuery`) instead of
+`useListUsersQuery` — previously it called the `platform_admin`-gated listing
+unconditionally and silently showed zero results for any team-admin-only caller.
+
+`controlPlaneOpenApi.ts` regenerated (`make update-control-plane-api`). No other
+route or schema changed.
+
+## 19. Contract Notes — audit-name resolution + `updated_by` (2026-07-20, #1952)
+
+**New endpoint:** `GET /users/by-ids?ids=<uid>&ids=<uid>` → `list[UserSummary]`
+(max 100 ids). Open to any authenticated user — it only exposes display identity
+(name/username/email), never roles or credentials. Every requested id yields
+exactly one entry, in request order, deduplicated; unknown ids (or a disabled
+Keycloak M2M client) degrade to an id-only summary so callers can always fall
+back to rendering the uid. Wraps the pre-existing internal service
+`users/service.py::get_users_by_ids`. The frontend agent-edit footer resolves
+`created_by`/`updated_by` through it (`useUsersByIdsQuery`) instead of showing
+raw uids (#1952); the unpaginated `platform_admin`-only `GET /users` stays
+untouched.
+
+**Schema:** `ManagedAgentInstanceSummary.updated_by: str | null` (read-only,
+server-authoritative). Backed by a new nullable `agent_instance.updated_by`
+column (Alembic `0285dc3a0cdc`, plain ADD COLUMN, SQLite-compatible), stamped
+with the acting user's uid on every `PATCH
+/teams/{team_id}/agent-instances/{id}`. NULL means never user-edited
+(seed/startup saves have no acting user).
+
+`controlPlaneOpenApi.ts` regenerated (`make update-control-plane-api`).
+
+## 20. Contract Notes — prompts-context personal scoping (2026-07-20, #2023)
+
+**Behavior change:** `GET /teams/{team_id}/prompts/context` no longer merges
+the caller's personal prompts into a non-personal team's context (#2023) — a
+team space returns the team's prompts + platform defaults only; the personal
+space returns the caller's prompts (scope `personal`) + defaults. Response
+shape unchanged. Already-attached personal prompts keep resolving at
+prepare-execution (see `design/PROMPTS.md` §5/§6).
+
+## 21. Contract Notes — personal team isolation rule (CTRLP-10 / AUTHZ-08)
+
+**Personal team isolation rule:** the personal team ID is `personal-{user.uid}`
+(`fred_core.common.personal_team_id`) — no two users share a personal team.
+Every team-scoped session, agent-instance, and prompt endpoint enforces
+isolation by team membership; no additional per-resource `user_id` filter is
+required or maintained for personal-space resources. The `"personal"` string
+accepted on some routes is a bootstrap-era URL alias resolved server-side to
+the caller's own canonical ID — it is never itself a stored value. Full
+authorization mechanism (self-provisioned ReBAC tuple, write-guarded):
+[`platform/REBAC.md` § Personal
+teams](../platform/REBAC.md#personal-teams--self-provisioned-never-admin-writable-authz-08).
+
+## 22. Contract Notes — #1903 capability asset uploads (2026-07-17)
+
+### Multipart companion routes for agent saves that carry capability assets
+
+An asset-bearing capability (first: `ppt_filler`, AGENT-CAPABILITY-RFC §3.4)
+needs its uploaded file to travel INSIDE the atomic agent save so the pod's
+`validate_config` can parse it, store the binary, and persist the derived
+config in one step. Two additive routes relay that multipart; the existing
+JSON routes are unchanged and remain the path for every save without uploads:
+
+- `POST /teams/{team_id}/agent-instances/with-assets`
+- `PATCH /teams/{team_id}/agent-instances/{agent_instance_id}/with-assets`
+
+Body (`multipart/form-data`):
+
+| Field | Meaning |
+| --- | --- |
+| `request` | The corresponding JSON request (`CreateAgentInstanceRequest` / `UpdateAgentInstanceRequest`) as a JSON object string |
+| `asset_slots` | One `{capability_id}:{slot_key}` reference per uploaded file, aligned by index with `asset_files` |
+| `asset_files` | The uploaded binaries |
+
+Semantics: control-plane is a pure relay — it never opens the bytes. Files are
+grouped per capability and forwarded to the pod's
+`POST /agents/capabilities/{id}/validate-config` as multipart fields keyed by
+slot key; the pod's declared `AssetSlot` gate (cardinality, extension) and the
+capability's own content validation both run pod-side, and their 422 wording
+propagates verbatim (the uniform-422 convention of §17). Mismatched
+`asset_slots`/`asset_files` lengths and malformed slot references are rejected
+422 before any pod call. Files addressed to a capability that is not active in
+the save are ignored, mirroring the config-values policy. Responses and
+authorization (`CAN_UPDATE_AGENTS`) are identical to the JSON routes.

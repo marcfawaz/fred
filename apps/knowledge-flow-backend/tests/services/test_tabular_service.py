@@ -82,6 +82,43 @@ async def _ingest_csv(
     return processed_metadata
 
 
+async def _ingest_excel_workbook(*, tmp_path: Path, document_uid: str) -> tuple[DocumentMetadata, Path]:
+    """Run the spreadsheet input + output stages for a two-sheet workbook
+    (Ventes: city/amount, Cibles: city/target) and save the metadata.
+
+    Returns the saved metadata and the local output directory (output.md +
+    tables.json), which callers can upload as document preview content.
+    """
+    from openpyxl import Workbook
+
+    from knowledge_flow_backend.core.processors.input.excel_processor.excel_processor import ExcelProcessor
+    from knowledge_flow_backend.core.processors.output.excel_processor.excel_table_registration_processor import ExcelTableRegistrationProcessor
+
+    workbook_path = tmp_path / f"{document_uid}.xlsx"
+    workbook = Workbook()
+    ventes = workbook.active
+    ventes.title = "Ventes"
+    for row in [("city", "amount"), ("Paris", 10), ("Lyon", 20)]:
+        ventes.append(row)
+    cibles = workbook.create_sheet("Cibles")
+    for row in [("city", "target"), ("Paris", 15), ("Lyon", 25)]:
+        cibles.append(row)
+    workbook.save(str(workbook_path))
+
+    metadata = DocumentMetadata(
+        identity=Identity(document_name=f"{document_uid}.xlsx", document_uid=document_uid, title=document_uid),
+        source=SourceInfo(source_type=SourceType.PUSH, source_tag="uploads"),
+        file=FileInfo(file_type=FileType.XLSX),
+        tags=Tagging(tag_ids=[], tag_names=[]),
+    )
+
+    output_dir = tmp_path / f"{document_uid}-output"
+    ExcelProcessor().convert_file_to_markdown(workbook_path, output_dir, document_uid)
+    metadata = ExcelTableRegistrationProcessor().process(str(output_dir / "output.md"), metadata)
+    await MetadataService().save_document_metadata(_user(), metadata)
+    return metadata, output_dir
+
+
 class _FakeRebac:
     def __init__(self, readable_document_uids: set[str]):
         self.readable_document_uids = readable_document_uids
@@ -339,6 +376,59 @@ async def test_tabular_processor_keeps_mixed_numeric_and_text_column_as_string(t
 
 
 @pytest.mark.asyncio
+async def test_tabular_processor_records_sample_values_for_low_cardinality_string_columns(tmp_path):
+    """
+    A low-cardinality string column carries its exact distinct values on the
+    schema, so a SQL-writing agent sees the real stored casing instead of
+    guessing it (e.g. it must not guess 'critical' when the data says
+    'CRITICAL').
+    """
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    rows = "\n".join(f"{i},{'CRITICAL' if i % 2 == 0 else 'LOW'}" for i in range(10))
+    csv_path = tmp_path / "scan.csv"
+    csv_path.write_text(f"id,severity\n{rows}\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    metadata = _metadata(document_uid="doc-severity", file_name="scan.csv")
+    processed_metadata = processor.process(str(csv_path), metadata)
+    artifact = read_tabular_artifact(processed_metadata)
+
+    assert artifact is not None
+    severity_column = next(column for column in artifact.columns if column.name == "severity")
+    assert severity_column.sample_values == ["CRITICAL", "LOW"]
+
+    # Non-string columns are never sampled, regardless of cardinality.
+    id_column = next(column for column in artifact.columns if column.name == "id")
+    assert id_column.sample_values is None
+
+
+@pytest.mark.asyncio
+async def test_tabular_processor_skips_sample_values_for_high_cardinality_string_columns(tmp_path):
+    """
+    A string column above the low-cardinality threshold gets no sample_values
+    — there is nothing useful to ground an agent's query with once every row
+    is (close to) unique, and listing them all would bloat the schema payload.
+    """
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    rows = "\n".join(f"{i},unique-label-{i}" for i in range(30))
+    csv_path = tmp_path / "wide.csv"
+    csv_path.write_text(f"row,label\n{rows}\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    metadata = _metadata(document_uid="doc-high-cardinality", file_name="wide.csv")
+    processed_metadata = processor.process(str(csv_path), metadata)
+    artifact = read_tabular_artifact(processed_metadata)
+
+    assert artifact is not None
+    label_column = next(column for column in artifact.columns if column.name == "label")
+    assert label_column.sample_values is None
+
+
+@pytest.mark.asyncio
 async def test_tabular_processor_cleans_temporary_parquet_after_upload(tmp_path, monkeypatch):
     """
     Ensure the DuckDB-generated Parquet temp file is deleted after content-store upload.
@@ -387,6 +477,33 @@ async def test_tabular_processor_cleans_temporary_parquet_after_upload(tmp_path,
     assert processed_metadata.file.row_count == 2
     assert observed["seen_during_upload"] is True
     assert not tracked_parquet_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_tabular_processor_logs_parquet_artifact_write(tmp_path, caplog):
+    """
+    Ensure a successful Parquet upload leaves a durable, gathersable log line.
+
+    Why this exists:
+    - Before this fix, `_persist_parquet_artifact` uploaded the artifact to
+      content storage without logging anything on success, so operators had
+      no positive confirmation in stdout/OpenSearch that ingestion actually
+      produced a queryable dataset.
+    """
+    csv_path = tmp_path / "sales.csv"
+    csv_path.write_text("city,amount\nParis,10\nLyon,20\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    metadata = _metadata(document_uid="doc-log-check", file_name="sales.csv")
+
+    with caplog.at_level("INFO"):
+        processed_metadata = processor.process(str(csv_path), metadata)
+
+    artifact = read_tabular_artifact(processed_metadata)
+    assert artifact is not None
+
+    tabular_log_records = [record.message for record in caplog.records if "[TABULAR]" in record.message]
+    assert any("document_uid=doc-log-check" in message and f"object_key={artifact.object_key}" in message and "rows=2" in message for message in tabular_log_records)
 
 
 @pytest.mark.integration
@@ -696,13 +813,14 @@ async def test_tabular_service_scopes_datasets_to_active_team_and_libraries(tmp_
     )
     assert [dataset.document_uid for dataset in team_a_datasets] == ["doc-team-a"]
 
-    scoped_schema = await service.describe_dataset(
+    [scoped_schema] = await service.describe_documents(
         _user(),
-        "doc-team-a",
+        ["doc-team-a"],
         owner_filter=OwnerFilter.TEAM,
         team_id="team-a",
     )
     assert scoped_schema.document_uid == "doc-team-a"
+    assert scoped_schema.kind == "csv"
 
     assert (
         await service.list_datasets(
@@ -735,6 +853,192 @@ async def test_tabular_service_scopes_datasets_to_active_team_and_libraries(tmp_
                 team_id="team-a",
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_tabular_service_expands_excel_workbook_into_multiple_datasets(tmp_path):
+    """
+    Vérifie la chaîne spreadsheet complète : input Excel (upload Parquet en clés
+    canoniques + sidecar), output (promotion en `tabular_multi_v1`), puis
+    éclatement 1 document → N datasets interrogeables en SQL avec les alias
+    déterministes publiés dans le catalogue.
+    """
+    from knowledge_flow_backend.features.tabular.artifacts import build_table_query_alias, read_tabular_multi_artifact
+
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    document_uid = "doc-excel"
+    # Input stage (output.md + tables.json + Parquet en clés canoniques) puis
+    # output stage (promotion du sidecar dans metadata.extensions)
+    metadata, output_dir = await _ingest_excel_workbook(tmp_path=tmp_path, document_uid=document_uid)
+    assert (output_dir / "output.md").is_file()
+    multi = read_tabular_multi_artifact(metadata)
+    assert multi is not None and len(multi.tables) == 2
+    assert metadata.processing.stages[ProcessingStage.SQL_INDEXED] == ProcessingStatus.DONE
+
+    # La sauvegarde (pruning des révisions) ne doit pas supprimer les tables courantes
+    prefix = document_artifact_prefix(
+        artifacts_prefix=ApplicationContext.get_instance().get_config().storage.tabular_store.artifacts_prefix,
+        document_uid=document_uid,
+    )
+    assert {stored.key for stored in content_store.list_objects(prefix)} == {table.object_key for table in multi.tables}
+
+    # Le service éclate le document en un dataset par table, alias stockés
+    service = TabularService()
+    datasets = await service.list_datasets(_user())
+    ventes_alias = build_table_query_alias(document_uid, "Ventes", 1)
+    cibles_alias = build_table_query_alias(document_uid, "Cibles", 1)
+    assert {dataset.query_alias for dataset in datasets} == {ventes_alias, cibles_alias}
+    assert {dataset.document_uid for dataset in datasets} == {document_uid}
+
+    # Les deux tables se montent et se joignent en SQL
+    joined = await service.query_read(
+        _user(),
+        request=TabularQueryRequest(
+            sql=f"SELECT v.city, v.amount, c.target FROM {ventes_alias} AS v JOIN {cibles_alias} AS c ON v.city = c.city ORDER BY v.city",
+        ),
+    )
+    assert [row["city"] for row in joined.rows] == ["Lyon", "Paris"]
+
+    # Scoper la requête sur l'uid du document monte bien TOUTES ses tables
+    scoped = await service.query_read(
+        _user(),
+        request=TabularQueryRequest(
+            sql=f"SELECT COUNT(*) AS n FROM {cibles_alias}",
+            dataset_uids=[document_uid],
+        ),
+    )
+    assert scoped.rows == [{"n": 2}]
+
+
+@pytest.mark.asyncio
+async def test_tabular_service_lists_documents_mixing_csv_and_spreadsheet(tmp_path, metadata_store):
+    """
+    Vérifie la surface document-centrique : un document par entrée (CSV comme
+    classeur), kind correct, tables imbriquées avec alias, et liste allégée
+    (pas de colonnes — elles relèvent de l'endpoint schemas).
+    """
+    from knowledge_flow_backend.features.tabular.artifacts import build_table_query_alias
+
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    await _ingest_csv(
+        tmp_path=tmp_path,
+        metadata_store=metadata_store,
+        document_uid="doc-sales",
+        file_name="sales.csv",
+        content="city,amount\nParis,10\nLyon,20\n",
+    )
+    await _ingest_excel_workbook(tmp_path=tmp_path, document_uid="doc-excel")
+
+    service = TabularService()
+    documents = await service.list_documents(_user())
+    documents_by_uid = {document.document_uid: document for document in documents}
+    assert set(documents_by_uid) == {"doc-sales", "doc-excel"}
+
+    csv_document = documents_by_uid["doc-sales"]
+    assert csv_document.kind == "csv"
+    assert len(csv_document.tables) == 1
+    assert csv_document.tables[0].sheet is None
+    assert csv_document.tables[0].row_count == 2
+
+    excel_document = documents_by_uid["doc-excel"]
+    assert excel_document.kind == "spreadsheet"
+    assert {table.sheet for table in excel_document.tables} == {"Ventes", "Cibles"}
+    assert {table.query_alias for table in excel_document.tables} == {
+        build_table_query_alias("doc-excel", "Ventes", 1),
+        build_table_query_alias("doc-excel", "Cibles", 1),
+    }
+
+    # La liste reste légère : le résumé de table n'expose pas les colonnes.
+    assert "columns" not in csv_document.tables[0].model_dump()
+
+
+@pytest.mark.asyncio
+async def test_tabular_service_describes_documents_in_batch_with_all_tables(tmp_path, metadata_store):
+    """
+    Vérifie que l'endpoint schemas est batch et table-complet : toutes les
+    tables d'un classeur sont décrites (fin du « première table gagne »), et
+    les uids interdits/inconnus lèvent 403/404 respectivement.
+    """
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    await _ingest_csv(
+        tmp_path=tmp_path,
+        metadata_store=metadata_store,
+        document_uid="doc-sales",
+        file_name="sales.csv",
+        content="city,amount\nParis,10\nLyon,20\n",
+    )
+    await _ingest_excel_workbook(tmp_path=tmp_path, document_uid="doc-excel")
+
+    service = TabularService()
+    schemas = await service.describe_documents(_user(), ["doc-sales", "doc-excel"])
+    assert [schema.document_uid for schema in schemas] == ["doc-sales", "doc-excel"]
+
+    csv_schema, excel_schema = schemas
+    assert csv_schema.kind == "csv"
+    assert [column.name for column in csv_schema.tables[0].columns] == ["city", "amount"]
+
+    assert excel_schema.kind == "spreadsheet"
+    assert len(excel_schema.tables) == 2
+    columns_by_sheet = {table.sheet: [column.name for column in table.columns] for table in excel_schema.tables}
+    assert columns_by_sheet == {"Ventes": ["city", "amount"], "Cibles": ["city", "target"]}
+
+    with pytest.raises(ValueError, match="At least one document uid"):
+        await service.describe_documents(_user(), [])
+
+    service.rebac = _FakeRebac({"doc-sales", "doc-excel", "doc-unknown"})
+    with pytest.raises(FileNotFoundError, match="doc-unknown"):
+        await service.describe_documents(_user(), ["doc-sales", "doc-unknown"])
+
+    service.rebac = _FakeRebac({"doc-sales"})
+    with pytest.raises(PermissionError, match="doc-hidden"):
+        await service.describe_documents(_user(), ["doc-sales", "doc-hidden"])
+
+
+@pytest.mark.asyncio
+async def test_tabular_service_document_markdown_is_spreadsheet_only(tmp_path, metadata_store):
+    """
+    Vérifie la route markdown : renvoie le catalogue `output.md` d'un classeur
+    (avec les alias SQL exacts), refuse les documents non-spreadsheet (404) et
+    les documents non lisibles (403).
+    """
+    from knowledge_flow_backend.features.tabular.artifacts import build_table_query_alias
+
+    content_store = ApplicationContext.get_instance().get_content_store()
+    content_store.clear()
+
+    await _ingest_csv(
+        tmp_path=tmp_path,
+        metadata_store=metadata_store,
+        document_uid="doc-sales",
+        file_name="sales.csv",
+        content="city,amount\nParis,10\nLyon,20\n",
+    )
+    metadata, output_dir = await _ingest_excel_workbook(tmp_path=tmp_path, document_uid="doc-excel")
+
+    # Dans le pipeline réel, save_output uploade output.md et la preview passe
+    # à DONE ; on rejoue ces deux étapes pour la lecture du catalogue.
+    content_store.save_output("doc-excel", output_dir)
+    metadata.mark_stage_done(ProcessingStage.PREVIEW_READY)
+    await MetadataService().save_document_metadata(_user(), metadata)
+
+    service = TabularService()
+    content = await service.get_document_markdown(_user(), "doc-excel")
+    assert "# Extraction summary" in content
+    assert build_table_query_alias("doc-excel", "Ventes", 1) in content
+    assert build_table_query_alias("doc-excel", "Cibles", 1) in content
+
+    with pytest.raises(FileNotFoundError, match="not a spreadsheet"):
+        await service.get_document_markdown(_user(), "doc-sales")
+
+    service.rebac = _FakeRebac(set())
+    with pytest.raises(PermissionError, match="doc-excel"):
+        await service.get_document_markdown(_user(), "doc-excel")
 
 
 def test_tabular_service_httpfs_install_is_attempted_after_load_failure():
@@ -770,3 +1074,124 @@ def test_tabular_service_httpfs_install_is_attempted_after_load_failure():
     service._ensure_httpfs_ready(connection)  # type: ignore[arg-type]
 
     assert connection.commands == ["LOAD httpfs", "INSTALL httpfs", "LOAD httpfs"]
+
+
+class _FakeVectorStore:
+    """Records `add_documents` calls without touching a real vector backend."""
+
+    def __init__(self, *, raise_on_add: bool = False):
+        self.raise_on_add = raise_on_add
+        self.added_documents: list = []
+
+    def add_documents(self, documents):
+        if self.raise_on_add:
+            raise RuntimeError("simulated vector store failure")
+        self.added_documents.extend(documents)
+        return [doc.metadata.get("chunk_uid") for doc in documents]
+
+
+def test_tabular_processor_pointer_chunks_disabled_by_default(tmp_path):
+    """
+    Verify the disabled-by-default path is untouched (RAG-DATASET-DISCOVERY-RFC.md §8:
+    measured activation — no embedder/vector-store dependency paid unless enabled).
+    """
+    csv_path = tmp_path / "sales.csv"
+    csv_path.write_text("city,amount\nParis,10\nLyon,20\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    assert processor.tabular_config.pointer_chunks_enabled is False
+    assert processor.vector_store is None
+    assert processor.embedder is None
+
+    metadata = _metadata(document_uid="doc-no-pointer", file_name="sales.csv")
+    processed_metadata = processor.process(str(csv_path), metadata)
+
+    artifact = read_tabular_artifact(processed_metadata)
+    assert artifact is not None
+    assert processed_metadata.processing.stages[ProcessingStage.SQL_INDEXED] == ProcessingStatus.DONE
+
+
+def test_tabular_processor_emits_dataset_pointer_chunk_when_enabled(tmp_path):
+    """
+    Verify the pointer-chunk content, id, and kind match RAG-DATASET-DISCOVERY-RFC.md
+    §2.1/§2.2/§2.4: one deterministic chunk, injection-resistant fixed template, no
+    sample values in this increment.
+    """
+    csv_path = tmp_path / "sales.csv"
+    csv_path.write_text("city,amount\nParis,10\nLyon,20\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    processor.tabular_config.pointer_chunks_enabled = True
+    fake_vector_store = _FakeVectorStore()
+    processor.vector_store = fake_vector_store
+
+    metadata = _metadata(document_uid="doc-pointer", file_name="sales.csv")
+    processed_metadata = processor.process(str(csv_path), metadata)
+
+    assert len(fake_vector_store.added_documents) == 1
+    pointer_document = fake_vector_store.added_documents[0]
+
+    assert pointer_document.metadata["chunk_uid"] == "doc-pointer::pointer"
+    assert pointer_document.metadata["chunk_kind"] == "dataset_pointer"
+    assert pointer_document.metadata["document_uid"] == "doc-pointer"
+    # VectorSearchService unconditionally filters on metadata.retrievable=true
+    # (vector_search_service.py:335,439,518) — without this the pointer chunk
+    # is written but invisible to every search call. Caught live (2026-07-19)
+    # by inspecting the actual OpenSearch document after a real ingestion.
+    assert pointer_document.metadata["retrievable"] is True
+    # Every deletion/consistency path in metadata/service.py gates its vector
+    # cleanup on ProcessingStage.VECTORIZED being marked — without this, a
+    # deleted tabular dataset leaves its pointer chunk permanently orphaned.
+    # Caught live (2026-07-19): tabular artifacts/content were deleted but the
+    # vector chunk was left behind because this guard never saw VECTORIZED.
+    assert processed_metadata.processing.stages[ProcessingStage.VECTORIZED] == ProcessingStatus.DONE
+
+    text = pointer_document.page_content
+    assert "[DATASET POINTER" in text
+    assert "[END DATASET POINTER]" in text
+    assert "city" in text and "amount" in text
+    assert "read_query" in text
+    assert "dataset_uid=doc-pointer" in text
+    # Increment 1 explicitly excludes sample values (§2.4) — guard against
+    # accidentally reintroducing real cell values into the pointer text.
+    assert "Paris" not in text
+    assert "Lyon" not in text
+    assert "Sample values" not in text
+
+
+def test_tabular_processor_pointer_chunk_failure_is_non_fatal(tmp_path, caplog):
+    """
+    Verify a pointer-chunk write failure never breaks Parquet ingestion — the
+    processor's primary contract (RAG-DATASET-DISCOVERY-RFC.md §2.1: best-effort).
+    """
+    csv_path = tmp_path / "sales.csv"
+    csv_path.write_text("city,amount\nParis,10\nLyon,20\n", encoding="utf-8")
+
+    processor = TabularProcessor()
+    processor.tabular_config.pointer_chunks_enabled = True
+    processor.vector_store = _FakeVectorStore(raise_on_add=True)
+
+    metadata = _metadata(document_uid="doc-pointer-fail", file_name="sales.csv")
+    with caplog.at_level("WARNING"):
+        processed_metadata = processor.process(str(csv_path), metadata)
+
+    artifact = read_tabular_artifact(processed_metadata)
+    assert artifact is not None
+    assert processed_metadata.processing.stages[ProcessingStage.SQL_INDEXED] == ProcessingStatus.DONE
+    assert any("failed to write dataset pointer chunk" in record.message for record in caplog.records)
+
+
+def test_tabular_store_config_pointer_chunks_disabled_by_default():
+    """Guard the measured-activation default (RAG-DATASET-DISCOVERY-RFC.md §8)."""
+    from knowledge_flow_backend.common.structures import TabularStoreConfig
+
+    assert TabularStoreConfig().pointer_chunks_enabled is False
+
+
+def test_allowed_chunk_keys_includes_chunk_kind():
+    """chunk_kind must survive `sanitize_chunk_metadata`'s whitelist or pointer chunks silently lose it."""
+    from knowledge_flow_backend.core.processors.output.vectorization_processor.vectorization_utils import sanitize_chunk_metadata
+
+    clean, dropped = sanitize_chunk_metadata({"chunk_uid": "x::pointer", "chunk_kind": "dataset_pointer"})
+    assert clean["chunk_kind"] == "dataset_pointer"
+    assert "chunk_kind" not in dropped

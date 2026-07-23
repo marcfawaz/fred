@@ -6,14 +6,16 @@
   "overrides": {
     "pdfjs-dist": "4.3.136",
     "canvas": "npm:@napi-rs/canvas@^0.1.59",
-    "@mapbox/node-pre-gyp": "^2"
+    "@mapbox/node-pre-gyp": "^2",
+    "dompurify": "^3.4.12"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "prettier --check .",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "format": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
@@ -22,11 +24,9 @@
     "@emotion/styled": "^11.14.1",
     "@fontsource/inter": "^5.2.6",
     "@fontsource/roboto": "^5.1.0",
-    "@hookform/resolvers": "^5.1.1",
-    "@monaco-editor/react": "^4.6.0",
+    "@mdxeditor/editor": "^4.0.4",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
-    "@mui/x-tree-view": "^8.27.2",
     "@reduxjs/toolkit": "^2.1.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.2",
@@ -35,17 +35,13 @@
     "i18next-browser-languagedetector": "^8.2.0",
     "katex": "^0.16.23",
     "keycloak-js": "^25.0.1",
-    "leaflet": "^1.9.4",
     "mermaid": "^11.12.3",
-    "monaco-editor": "^0.55.1",
-    "papaparse": "^5.4.1",
     "pdfjs-dist": "4.3.136",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-dropzone": "^11.0.0",
     "react-hook-form": "^7.61.1",
     "react-i18next": "^15.5.3",
-    "react-leaflet": "^5.0.0",
     "react-markdown": "^9.1.0",
     "react-pdf": "^10.4.1",
     "react-redux": "^9.1.0",
@@ -59,21 +55,22 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "sass": "^1.70.0",
-    "uuid": "^11.0.3",
-    "zod": "^4.0.10"
+    "uuid": "^11.0.3"
   },
   "devDependencies": {
     "@date-io/dayjs": "^3.0.0",
     "@mui/x-date-pickers": "^8.27.2",
     "@rtk-query/codegen-openapi": "2.2.0",
     "@svgr/rollup": "^8.1.0",
-    "@types/leaflet": "^1.9.17",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "8.65.0",
+    "@typescript-eslint/parser": "8.65.0",
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "^4.1.7",
     "dayjs": "^1.11.13",
     "eslint": "^10.0.1",
+    "eslint-plugin-react-hooks": "7.1.1",
     "happy-dom": "^20.10.6",
     "prettier": "3.5.3",
     "prettier-plugin-css-order": "^2.2.0",
@@ -82,13 +79,6 @@
     "vite": "^6.4.2",
     "vite-tsconfig-paths": "6.1.1",
     "vitest": "^4.1.7"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest",
-      "plugin:@typescript-eslint/recommended"
-    ]
   },
   "browserslist": {
     "production": [

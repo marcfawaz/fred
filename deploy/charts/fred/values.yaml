@@ -47,6 +47,12 @@ x-fast-input-processors: &fast-input-processors
     class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
   - suffix: ".csv"
     class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+  - suffix: ".xlsx"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xls"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xlsm"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
   - suffix: ".txt"
     class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
   - suffix: ".md"
@@ -85,6 +91,12 @@ x-rich-input-processors: &rich-input-processors
     class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
   - suffix: ".csv"
     class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+  - suffix: ".xlsx"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xls"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xlsm"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
   - suffix: ".txt"
     class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
   - suffix: ".md"
@@ -238,6 +250,10 @@ x-kf-scheduler: &kf-scheduler
     connect_timeout_seconds: 5
     ingestion_workflow_parallelism: 3
     ingestion_max_concurrent_workflow_tasks: 3
+    # If x-profile-medium/rich's pdf.docling_num_threads * this value exceeds the CPU
+    # cores/limits available to the worker pod, concurrent extractions oversubscribe
+    # the CPU and appear to stall rather than progress. Size docling_num_threads to
+    # (pod CPU limit) / ingestion_max_concurrent_activities.
     ingestion_max_concurrent_activities: 3
 
 x-kf-content-storage: &kf-content-storage
@@ -320,6 +336,7 @@ x-kf-storage: &kf-storage
     artifacts_prefix: "tabular/datasets"
     format: "parquet"
     compression: "snappy"
+    pointer_chunks_enabled: false
     query:
       engine: "duckdb"
       access_mode: "presigned_url"
@@ -331,7 +348,6 @@ x-kf-mcp: &kf-mcp
   reports_enabled: true
   kpi_enabled: true
   tabular_enabled: true
-  statistic_enabled: true
   text_enabled: true
   templates_enabled: true
   resources_enabled: true
@@ -432,7 +448,10 @@ applications:
     job:
       enabled: false
     migration:
-      enabled: false           # Run migrations via Helm hooks on deploy
+      # ON since writable_document (#1905) — the first fred-agents capability
+      # that owns a DB table. The pre-install/pre-upgrade hook Job now runs on
+      # every deploy so a fresh platform and every upgrade get the schema.
+      enabled: true
       scaleDown: true         # Scale deployment to 0 before migrating (safe, downtime acceptable)
       backoffLimit: 3         # Retry count on migration failure
       # fred-agents runs the runtime CLI (not bare alembic): it upgrades
@@ -981,15 +1000,6 @@ applications:
           description: "mcp.servers.corpus.description"
           transport: "streamable_http"
           url: "http://knowledge-flow-backend:8000/knowledge-flow/v1/mcp-corpus"
-          sse_read_timeout: 2000
-          enabled: true
-          auth_mode: "user_token"
-
-        - id: "mcp-knowledge-flow-statistics"
-          name: "mcp-knowledge-flow-statistics"
-          description: "mcp.servers.statistics.description"
-          transport: "streamable_http"
-          url: "http://knowledge-flow-backend:8000/knowledge-flow/v1/mcp-statistics"
           sse_read_timeout: 2000
           enabled: true
           auth_mode: "user_token"

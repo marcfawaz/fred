@@ -226,8 +226,11 @@ def find_free_port(used: set[int]) -> int:
             for match in re.findall(r"localhost:(\d+)", ports_file.read_text()):
                 used.add(int(match))
 
-    for _ in range(200):
-        port = random.randint(*PORT_RANGE)
+    start, end = PORT_RANGE
+    candidates = list(range(start, end + 1))
+    random.shuffle(candidates)
+
+    for port in candidates:
         if port in used:
             continue
         # Check if the port is actually free on the OS
@@ -431,16 +434,31 @@ def patch_vscode_tasks(wt: Path, ports: dict[str, int], autorun_task: str | None
     tasks_file.write_text(json.dumps(tasks, indent=2) + "\n")
 
 
+# Config files that hold cross-service `localhost:<port>` URLs and therefore need
+# their ports rewritten to the worktree's allocation. Both the dev (`configuration.yaml`,
+# loaded by `make run`) and prod (`configuration_prod.yaml`, loaded by `make run-prod`)
+# variants are listed — patching only the prod one leaves the default dev task pointing
+# at the main checkout's ports.
+INTER_SERVICE_CONFIGS = [
+    *[f"{service_dir(svc)}/config/configuration.yaml" for svc in PYTHON_SERVICES],
+    *[f"{service_dir(svc)}/config/configuration_prod.yaml" for svc in PYTHON_SERVICES],
+    f"{service_dir('fred-agents')}/config/mcp_catalog.yaml",
+    "apps/knowledge-flow-backend/config/configuration_worker.yaml",
+    "apps/control-plane-backend/config/configuration_worker.yaml",
+]
+
+
+def inter_service_config_paths(wt: Path) -> list[Path]:
+    """Return the existing config files whose cross-service ports must be rewritten."""
+
+    return [wt / p for p in INTER_SERVICE_CONFIGS if (wt / p).exists()]
+
+
 def worktree_skip_paths(wt: Path) -> list[str]:
     """Return the list of worktree-local config paths that should be hidden from git status."""
     paths = [
-        *[
-            f"{service_dir(svc)}/config/configuration_prod.yaml"
-            for svc in PYTHON_SERVICES
-        ],
-        f"{service_dir('fred-agents')}/config/mcp_catalog.yaml",
+        *INTER_SERVICE_CONFIGS,
         f"{service_dir('fred-agents')}/config/models_catalog.yaml",
-        "apps/knowledge-flow-backend/config/configuration_worker.yaml",
         "deploy/local/k3d/values-local.yaml",
         ".vscode/tasks.json",
         ".vscode/launch.json",
@@ -477,36 +495,87 @@ def read_ports_md(wt: Path) -> dict[str, int]:
     return ports
 
 
+def warn_unpatched_default_ports(wt: Path, ports: dict[str, int]) -> None:
+    """Warn about service config files still pointing at a default port after patching.
+
+    A leftover default port means the worktree would talk to the main checkout's
+    services instead of its own. This is the failure mode that went unnoticed when
+    fred-agents was added, so surface it loudly rather than letting it fail at runtime.
+    """
+    default_ports = {str(p): svc for svc, p in DEFAULT_PORTS.items()}
+    # Only ports we actually reallocated are stale; a service left on its default is fine.
+    stale = {p: svc for p, svc in default_ports.items() if ports[svc] != int(p)}
+    if not stale:
+        return
+
+    findings: list[str] = []
+    for cfg in sorted((wt / "apps").glob("*/config/*.yaml")):
+        try:
+            content = cfg.read_text()
+        except OSError:
+            continue
+        for port, svc in stale.items():
+            if f"localhost:{port}" in content:
+                findings.append(f"{cfg.relative_to(wt)} → localhost:{port} ({svc})")
+
+    if findings:
+        click.echo(
+            click.style("! ", fg="yellow", bold=True)
+            + "Config still references default ports — these may hit the main checkout:"
+        )
+        for f in findings:
+            info(f)
+
+
+def disable_prometheus_exporter(content: str) -> str:
+    """Force `observability.kpi.prometheus.enabled: false` in a service config.
+
+    Every backend (and Temporal worker) binds a hardcoded Prometheus scrape port
+    (`observability.kpi.prometheus.port`) that is identical across worktrees, and
+    the sink model defaults to enabled — so the second worktree to start a service
+    dies with "Address already in use" on the metrics port, not the service port.
+    Handles both config shapes: an explicit `enabled: true` right under the
+    `prometheus:` key, and a block that only sets `port:` (relying on the
+    enabled-by-default model).
+    """
+    patched = re.sub(
+        r"^(\s*)prometheus:\n(\s+)enabled: true\b",
+        r"\1prometheus:\n\2enabled: false",
+        content,
+        flags=re.MULTILINE,
+    )
+    return re.sub(
+        r"^(\s*)prometheus:\n(\s+)port:",
+        r"\1prometheus:\n\2enabled: false\n\2port:",
+        patched,
+        flags=re.MULTILINE,
+    )
+
+
 def apply_patch_pipeline(wt: Path, branch: str, ports: dict[str, int], autorun_task: str | None = None) -> None:
     """Apply the full worktree patch pipeline: prod configs, .vscode, and skip-worktree hiding."""
-    # Disable prometheus metrics in prod configs
-    for svc in PYTHON_SERVICES:
-        prod_cfg = wt / service_dir(svc) / "config" / "configuration_prod.yaml"
-        if prod_cfg.exists():
-            content = prod_cfg.read_text()
-            patched = content.replace("metrics_enabled: true", "metrics_enabled: false")
-            if patched != content:
-                prod_cfg.write_text(patched)
-
-    # Patch inter-service URLs that reference knowledge-flow-backend by its default port
-    kf_port = str(DEFAULT_PORTS["knowledge-flow-backend"])
-    kf_new_port = str(ports["knowledge-flow-backend"])
-    for cfg_path in [
-        wt / service_dir("fred-agents") / "config" / "configuration_prod.yaml",
-        wt / service_dir("fred-agents") / "config" / "mcp_catalog.yaml",
-    ]:
-        if cfg_path.exists():
-            content = cfg_path.read_text()
-            patched = content.replace(f"localhost:{kf_port}", f"localhost:{kf_new_port}")
-            if patched != content:
-                cfg_path.write_text(patched)
-                info(f"Patched {cfg_path.relative_to(wt)}")
+    # Patch inter-service URLs that reference another service by its default port.
+    # Every service in DEFAULT_PORTS is rewritten (not just knowledge-flow): fred-agents
+    # also dials control-plane via platform.control_plane_url, and leaving that at the
+    # default port makes managed agent-instance execution fail with a connection error.
+    # The same pass disables the Prometheus KPI exporter, whose scrape port cannot be
+    # shared between worktrees.
+    for cfg_path in inter_service_config_paths(wt):
+        content = cfg_path.read_text()
+        patched = content
+        for svc, default_port in DEFAULT_PORTS.items():
+            patched = patched.replace(f"localhost:{default_port}", f"localhost:{ports[svc]}")
+        patched = disable_prometheus_exporter(patched)
+        if patched != content:
+            cfg_path.write_text(patched)
+            info(f"Patched {cfg_path.relative_to(wt)}")
 
     # Copy .vscode from main repo (ensures latest tasks.json) then patch
     vscode_dir = wt / ".vscode"
     vscode_dir.mkdir(exist_ok=True)
     for f in (FRED_ROOT / ".vscode").iterdir():
-        shutil.copy2(f, vscode_dir / f.name)
+        if f.is_file():
+            shutil.copy2(f, vscode_dir / f.name)
 
     color = pick_color()
     patch_workspace_file(wt, color, branch)
@@ -516,6 +585,8 @@ def apply_patch_pipeline(wt: Path, branch: str, ports: dict[str, int], autorun_t
 
     hide_config_files(wt)
     ok("Patched files hidden from git status (skip-worktree)")
+
+    warn_unpatched_default_ports(wt, ports)
 
 
 def open_vscode(wt: Path) -> None:
@@ -712,7 +783,10 @@ def create(
         if branch_exists_local:
             run(["git", "worktree", "add", str(wt), branch], env=git_env)
         elif branch_exists_remote:
-            run(["git", "worktree", "add", str(wt), f"origin/{branch}"], env=git_env)
+            run(
+                ["git", "worktree", "add", "--track", "-b", branch, str(wt), f"origin/{branch}"],
+                env=git_env,
+            )
         else:
             cmd = ["git", "worktree", "add", "-b", branch, str(wt)]
             if from_ref:
@@ -795,8 +869,16 @@ def remove_worktree_and_branch(branch: str, prune: bool) -> None:
     ok(f"Worktree removed: {wt}")
 
     # Delete the branch if fully merged
-    result = subprocess.run(["git", "branch", "--merged"], capture_output=True, text=True)
-    if branch in result.stdout:
+    try:
+        result = run_quiet(["git", "branch", "--merged"])
+    except subprocess.CalledProcessError:
+        raise click.ClickException("git failed to list merged branches — see error above")
+    merged_branches = {
+        line.strip().removeprefix("* ").strip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    if branch in merged_branches:
         if prune or click.confirm(f"Branch '{branch}' is fully merged. Delete it?", default=False):
             run(["git", "branch", "-d", branch])
             ok(f"Branch deleted: {click.style(branch, fg='yellow')}")
@@ -835,8 +917,11 @@ def clean(prune: bool):
 
     branches = [wt.name.removeprefix("fred-wt-") for wt in candidates]
     picked = multi_select(branches)
+    if picked is None:
+        click.echo(click.style("Aborted.", fg="bright_black"))
+        return
     if not picked:
-        click.echo(click.style("Nothing removed.", fg="bright_black"))
+        click.echo(click.style("Nothing selected.", fg="bright_black"))
         return
 
     names = [branches[i] for i in picked]

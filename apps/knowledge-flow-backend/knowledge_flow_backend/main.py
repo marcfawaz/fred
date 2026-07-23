@@ -70,10 +70,11 @@ from knowledge_flow_backend.features.kpi.prometheus_controller import (
 from knowledge_flow_backend.features.metadata.controller import MetadataController
 from knowledge_flow_backend.features.resources.controller import ResourceController
 from knowledge_flow_backend.features.scheduler.scheduler_controller import SchedulerController
-from knowledge_flow_backend.features.statistic.controller import StatisticController
+from knowledge_flow_backend.features.summarize.controller import SummarizeController
 from knowledge_flow_backend.features.tabular.controller import TabularController
 from knowledge_flow_backend.features.tag.tag_controller import TagController
 from knowledge_flow_backend.features.tasks.controller import TasksController
+from knowledge_flow_backend.features.tree.controller import TreeController
 from knowledge_flow_backend.features.vector_search.vector_search_controller import (
     VectorSearchController,
 )
@@ -232,6 +233,8 @@ def create_app() -> FastAPI:
     IngestionController(router)
     TagController(app, router)
     VectorSearchController(router)
+    TreeController(router)
+    SummarizeController(app, router)
     KPIController(router)
     ResourceController(router)
     McpFilesystemController(router)
@@ -245,13 +248,6 @@ def create_app() -> FastAPI:
         logger.info("%s TabularController registered (mcp.tabular_enabled=true)", LOG_PREFIX)
     else:
         logger.warning("%s TabularController disabled via configuration.mcp.tabular_enabled=false", LOG_PREFIX)
-
-    if configuration.mcp.statistic_enabled:
-        # Required for the statistical analysis agent
-        StatisticController(router)
-        logger.info("%s StatisticController registered (mcp.statistic_enabled=true)", LOG_PREFIX)
-    else:
-        logger.warning("%s StatisticController disabled via configuration.mcp.statistic_enabled=false", LOG_PREFIX)
 
     if configuration.mcp.opensearch_ops_enabled:
         OpenSearchOpsController(router)
@@ -369,11 +365,16 @@ def create_app() -> FastAPI:
             app,
             name="Knowledge Flow Tabular MCP",
             description=(
-                "SQL access layer exposed through SQLAlchemy. "
-                "Provides agents with read and query capabilities over relational data "
-                "from configured backends (e.g. PostgreSQL, MySQL, SQLite). "
-                "Use this MCP to explore table schemas, run SELECT queries, and analyze tabular datasets. "
-                "Create, update and drop tables if asked by the user if allowed."
+                "Read-only SQL access to the tabular documents ingested in Knowledge Flow: "
+                "CSV files (one table each) and Excel workbooks (one or several extracted tables), "
+                "stored as Parquet and queried through DuckDB. "
+                "Recommended flow: list_tabular_documents to discover documents and their table aliases; "
+                "get_tabular_documents_schemas for column-level schemas; "
+                "get_tabular_document_markdown to read a spreadsheet's extraction catalog "
+                "(sheet layout, table context and ranges, residual notes, exact SQL aliases); "
+                "read_query to run one read-only SELECT over the mounted tables. "
+                "Always scope read_query with dataset_uids (document uids — one spreadsheet uid mounts "
+                "every table of the workbook). No write operations are available."
             ),
             include_tags=["Tabular"],
             describe_all_responses=True,
@@ -383,27 +384,6 @@ def create_app() -> FastAPI:
         mcp_tabular.mount_http(mount_path=f"{mcp_prefix}/mcp-tabular")
     else:
         logger.info("%s MCP Tabular disabled via configuration.mcp.tabular_enabled=false", LOG_PREFIX)
-
-    if configuration.mcp.statistic_enabled:
-        mcp_statistical = FastApiMCP(
-            app,
-            name="Knowledge Flow Statistic MCP",
-            description=(
-                "Provides endpoints to load, explore, and analyze tabular datasets,"
-                "including outlier detection and correlation analysis."
-                "Supports plotting histograms and scatter plots, plus ML operations:"
-                "training, evaluation, saving/loading models, and single-row predictions."
-            ),
-            include_tags=["Statistic"],
-            describe_all_responses=True,
-            describe_full_response_schema=True,
-            auth_config=AuthConfig(  # <-- protect with your user auth as a normal dependency
-                dependencies=[Depends(get_current_user)]
-            ),
-        )
-        mcp_statistical.mount_http(mount_path=f"{mcp_prefix}/mcp-statistic")
-    else:
-        logger.info("%s MCP Statistic disabled via configuration.mcp.statistic_enabled=false", LOG_PREFIX)
 
     if configuration.mcp.text_enabled:
         mcp_text = FastApiMCP(

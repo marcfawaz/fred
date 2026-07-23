@@ -93,7 +93,7 @@ then gates global endpoints; `require_admin` sites map to the matching `admin`-l
   team vs org scope).
 - **B — collections/search** via existing `lookup_user_resources`: most are **already** ReBAC at the service
   layer (`metadata`, `tabular`, `vector_search.search`, `tag list_all_tags`) → just drop the residual
-  `@authorize`. To wire: `resources list_resources_by_kind`, runtime `list_agents`, `statistic /stat/*`.
+  `@authorize`. To wire: `resources list_resources_by_kind`, runtime `list_agents`.
 - **C — org-level** (uses §3.1): opensearch, prometheus/metrics, kpi (kf + cp), logs, users CRUD,
   import/export, policies/lifecycle, store audit/fix, rebac backfill, benchmark.
 - **D — already ReBAC / ownership / public** (no change): filesystem (team-scoped; drop redundant
@@ -137,7 +137,7 @@ Behavior-preserving by construction (org defaults mirror the current role matrix
 
 ## 8. Backlog & execution
 Backlog entry under a new `docs/swift/backlog/AUTHZ-MIGRATION-BACKLOG.md` (or a section in `BACKLOG.md` — see
-§9), one sub-item per bucket; `id-legend.yaml` + `PMO-BOARD.md` rows; GitHub issue links RFC + backlog before
+§9), one sub-item per bucket; `id-legend.yaml` row; GitHub issue links RFC + backlog before
 implementation (CLAUDE.md Step 3.5).
 
 ## 9. Decisions (confirmed 2026-06-29)

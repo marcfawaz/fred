@@ -132,7 +132,86 @@
     },
     "document_access": {
       "name": "Accès aux documents",
-      "description": "Recherchez dans les documents téléversés dans Fred par similarité sémantique (RAG)."
+      "description": "Recherchez dans les documents téléversés par similarité sémantique (RAG)."
+    },
+    "writable_document": {
+      "name": "Document collaboratif",
+      "description": "Rédigez des documents avec l'agent dans un éditeur Markdown côte à côte, et exportez-les en Word ou Markdown.",
+      "panel": {
+        "writable_document_pane": {
+          "title": "Document"
+        }
+      },
+      "untitled": "Document",
+      "saving": "Enregistrement…",
+      "close": "Fermer le panneau",
+      "download": "Télécharger",
+      "downloadError": "Échec du téléchargement",
+      "noSession": "Aucune session — ouvrez une conversation pour voir ses documents.",
+      "empty": "Aucun document pour l'instant. Demandez à l'agent d'en rédiger un.",
+      "card": {
+        "aria": "Document collaboratif",
+        "open": "Ouvrir",
+        "updatedByAgent": "Mis à jour par l'agent",
+        "updatedByUser": "Modifié par vous"
+      },
+      "format": {
+        "word": "Microsoft Word",
+        "markdown": "Markdown"
+      },
+      "code": {
+        "plainText": "Texte brut"
+      }
+    },
+    "ppt_filler": {
+      "name": "PPT Filler",
+      "description": "Faites remplir votre propre modèle PowerPoint depuis la conversation : l'agent extrait les valeurs et produit une présentation finalisée.",
+      "form": {
+        "uploadTemplate": "Téléverser un modèle .pptx",
+        "replaceTemplate": "Remplacer le modèle",
+        "uploadAria": "Fichier de modèle PowerPoint",
+        "clearAria": "Retirer le fichier sélectionné",
+        "currentTemplate": "Un modèle est configuré pour cet agent.",
+        "templateRequired": "PPT Filler nécessite un modèle PowerPoint. Téléversez un fichier .pptx.",
+        "templateInvalid": "Corrigez les erreurs du modèle ci-dessous avant d'enregistrer.",
+        "analyzing": "Analyse du modèle…",
+        "analyzeFailed": "Le modèle n'a pas pu être analysé. Vérifiez le fichier et réessayez.",
+        "schemaTitle": "Champs que l'agent remplira",
+        "learnMore": "Comment ça marche ? Que dois-je uploader ?",
+        "slide": "Diapositive {{number}}",
+        "imageBadge": "image · {{folder}}",
+        "noDescription": "Pas de description"
+      },
+      "errors": {
+        "key_without_description": "{{placeholder}} apparaît sur la diapositive {{slide}} mais n'a pas de description dans les commentaires.",
+        "described_but_not_in_slide": "{{placeholder}} est décrit dans les commentaires de la diapositive {{slide}} mais n'apparaît dans aucune zone de texte de cette diapositive.",
+        "unknown_metadata": "{{placeholder}} dans les commentaires de la diapositive {{slide}} déclare une métadonnée inconnue (seuls 'type' et 'folder' sont reconnus).",
+        "unknown_type": "{{placeholder}} dans les commentaires de la diapositive {{slide}} déclare un type inconnu (seuls 'text' et 'image' sont reconnus).",
+        "duplicated_metadata": "{{placeholder}} dans les commentaires de la diapositive {{slide}} déclare la même métadonnée plusieurs fois.",
+        "image_without_folder": "{{placeholder}} dans les commentaires de la diapositive {{slide}} est une image mais n'indique pas de dossier.",
+        "empty_folder": "{{placeholder}} dans les commentaires de la diapositive {{slide}} indique un dossier mais le laisse vide.",
+        "folder_without_image_type": "{{placeholder}} dans les commentaires de la diapositive {{slide}} indique un dossier mais n'est pas une image (ajoutez 'type: image' pour utiliser un dossier).",
+        "folder_not_found": "{{placeholder}} sur la diapositive {{slide}} pointe vers un dossier qui n'existe pas dans cet espace.",
+        "image_key_invalid_location": "{{placeholder}} sur la diapositive {{slide}} se trouve dans une cellule de tableau, qui ne peut pas contenir d'image. Déplacez-le dans une zone de texte ou un rectangle.",
+        "invalid_upload": "Le fichier téléversé n'a pas pu être lu comme un .pptx. Sélectionnez à nouveau le fichier et réessayez.",
+        "asset_required": "PPT Filler nécessite un modèle PowerPoint, mais aucun n'a été fourni."
+      },
+      "preview": {
+        "untitled": "Présentation",
+        "open": "Ouvrir l'aperçu",
+        "cardAria": "Aperçu de la présentation",
+        "download": "Télécharger le .pptx",
+        "downloadError": "Échec du téléchargement",
+        "close": "Fermer l'aperçu",
+        "loadError": "Impossible de charger l'aperçu.",
+        "loading": "Chargement de l'aperçu…",
+        "empty": "Pas encore d'aperçu. Demandez à l'assistant de remplir une présentation."
+      },
+      "panel": {
+        "ppt_preview_pane": {
+          "title": "Aperçu de la présentation"
+        }
+      }
     }
   },
   "chatbot": {
@@ -482,10 +561,6 @@
       "jira": {
         "description": "Permet à votre agent d'interagir avec Jira",
         "name": "Accès Jira"
-      },
-      "kubernetes": {
-        "description": "Permet à votre agent d'interagir avec les clusters Kubernetes",
-        "name": "Accès Kubernetes"
       },
       "local_stdio": {
         "description": "Exécute un serveur MCP local via stdio (outils basés sur un processus)",
@@ -1062,10 +1137,15 @@
       "confirm": {
         "deleteMessage": "Retirer « {{name}} » de ce dossier ?",
         "deleteTitle": "Retirer le document",
+        "deleteFolderMessageEmpty": "Supprimer le dossier vide « {{name}} » ?",
+        "deleteFolderMessageWithDocs": "Supprimer « {{name}} » et ses {{count}} document(s) ? Cette action est irréversible.",
+        "deleteFolderTitle": "Supprimer le dossier",
         "shareMessage": "Copier « {{name}} » dans l'espace d'équipe ? L'original reste à sa place.",
         "shareTitle": "Copier dans l'espace d'équipe"
       },
       "empty": {
+        "agentFiles": "Cet agent n'a encore créé aucun fichier pour vous. Les fichiers qu'il génère pour vous apparaîtront ici.",
+        "agents": "Aucun fichier d'agent pour l'instant. Les fichiers créés pour vous par vos agents apparaîtront ici, regroupés par agent.",
         "createLibrary": "Créez une bibliothèque (dossier) pour commencer à ajouter des documents.",
         "folder": "Ce dossier est vide."
       },
@@ -1086,6 +1166,9 @@
         "title": "Nouveau dossier"
       },
       "loading": "Chargement des ressources...",
+      "preview": {
+        "title": "Aperçu du document"
+      },
       "pagination": {
         "next": "Page suivante",
         "page": "page {{page}} / {{pageCount}}",
@@ -1099,6 +1182,8 @@
       },
       "title": "Ressources",
       "toast": {
+        "deleteFolderError": "Impossible de supprimer le dossier",
+        "deleteFolderSuccess": "Dossier supprimé",
         "processError": "Impossible de lancer le traitement",
         "processStarted": "Traitement lancé"
       }
@@ -1119,7 +1204,7 @@
       },
       "evaluationService": {
         "title": "Service d'évaluation indisponible",
-        "description": "Démarrez le service fred-evaluation pour gérer les campagnes."
+        "description": "Démarrez le service fred-evaluation pour gérer les évaluations et les exécutions."
       }
     },
     "sidebar": {
@@ -1392,7 +1477,9 @@
         "title": "Sollicitez vos {{agentsNicknamePlural}}"
       },
       "formAgent": {
+        "advancedSettings": "Paramètres avancés",
         "createdBy": "Créé par {{user}}",
+        "updatedBy": "Modifié par {{user}}",
         "fields": {
           "description": {
             "label": "Description",
@@ -1475,67 +1562,13 @@
       "title": "Votre profil"
     },
     "evaluation": {
-      "campaigns": {
-        "title": "Évaluations",
-        "description": "Campagnes de validation d'agents",
-        "newCampaign": "+ Nouvelle campagne",
-        "createCampaign": "Créer une campagne",
-        "empty": "Aucune campagne d'évaluation",
-        "loadError": "Erreur lors du chargement des campagnes.",
-        "casesError": "Erreur lors du chargement des cas.",
-        "noCases": "Aucun cas disponible.",
-        "drawerTitle": "Cas de la campagne",
-        "drawerHint": "Cliquez sur un cas pour voir tous les détails",
-        "inputLabel": "Entrée",
-        "executionError": "Erreur d'exécution",
-        "viewFullDetail": "Voir le détail complet →",
-        "metricsCount": "{{count}} métriques",
-        "targetInstance": "Instance · {{id}}",
-        "detail": "Détail",
-        "deleteTitle": "Supprimer la campagne",
-        "deleteMessage": "Supprimer {{name}} ? Cela supprime définitivement tous les cas, métriques et événements de cette campagne.",
-        "deleteSuccess": "Campagne supprimée",
-        "deleteError": "Échec de la suppression de la campagne",
-        "kpi": {
-          "active": "Campagnes actives",
-          "globalScore": "Score moyen global (%)",
-          "casesEvaluated": "Cas évalués",
-          "criticalFailures": "Échecs critiques"
-        },
-        "col": {
-          "name": "Nom / ID",
-          "target": "Cible",
-          "state": "État",
-          "verdict": "Verdict",
-          "progress": "Progression",
-          "scores": "Scores"
-        }
-      },
       "comingSoon": "Cet écran arrive ici — bientôt disponible.",
       "create": {
-        "title": "Nouvelle campagne",
-        "description": "Configurez et lancez une campagne de validation d'agent",
         "back": "Retour",
-        "steps": {
-          "target": "Cible",
-          "dataset": "Jeu de données",
-          "policy": "Politique"
-        },
-        "name": {
-          "label": "Nom de la campagne",
-          "placeholder": "ex. Régression nocturne"
-        },
-        "targetKind": {
-          "label": "Que voulez-vous évaluer ?"
-        },
         "target": {
           "managed": {
             "title": "Instance gérée",
-            "desc": "Une instance d'agent de l'équipe (control plane)"
-          },
-          "runtime": {
-            "title": "Agent runtime",
-            "desc": "Un agent précis sur un runtime, par identifiant"
+            "desc": "Une instance d'agent d'équipe approuvée via le control plane"
           }
         },
         "instance": {
@@ -1543,19 +1576,16 @@
           "placeholder": "Sélectionnez une instance",
           "loading": "Chargement des instances..."
         },
-        "runtime": {
-          "label": "Identifiant runtime",
-          "placeholder": "runtime-..."
+        "instanceTools": {
+          "label": "Tools activés sur cet agent",
+          "inherited": "Cette instance suit les tools par défaut de son template — aucune personnalisation propre à l'instance.",
+          "none": "Aucun tool activé sur cette instance."
         },
         "agent": {
           "label": "Identifiant d'agent",
           "placeholder": "agent-..."
         },
         "securityNote": "Les URLs de runtime ne sont jamais exposées au navigateur. Seuls des identifiants contrôlés sont acceptés.",
-        "dataset": {
-          "name": "Nom du jeu de données",
-          "version": "Version (optionnel)"
-        },
         "manual": {
           "label": "Cas de test"
         },
@@ -1568,14 +1598,13 @@
         },
         "import": {
           "json": "Importer du JSON",
-          "csv": "Importer du CSV",
           "dropHint": "Glissez-déposez un fichier {{mode}}, ou cliquez pour parcourir",
           "dropSub": "Jusqu'à 200 cas",
           "jsonImported": "{{count}} cas importés depuis le JSON",
-          "csvImported": "{{count}} cas importés depuis le CSV",
           "error": "Fichier invalide. Vérifiez le format JSON ou CSV.",
           "tooMany": "200 cas maximum autorisés.",
-          "total": "Total : {{count}} cas à évaluer"
+          "total": "Total : {{count}} cas à évaluer",
+          "empty": "Le fichier ne contient aucun cas."
         },
         "judge": {
           "label": "Profil du juge",
@@ -1586,6 +1615,21 @@
         },
         "timeout": {
           "label": "Délai par cas (s)"
+        },
+        "builtinMetrics": {
+          "label": "Métriques",
+          "help": "Choisis les métriques à calculer pour ce run — rien n'est ajouté automatiquement.",
+          "answerRelevancy": "Pertinence de la réponse",
+          "answerRelevancyDesc": "La réponse traite-t-elle la question posée ?",
+          "faithfulness": "Fidélité",
+          "faithfulnessDesc": "La réponse reste-t-elle ancrée dans le contexte récupéré ?",
+          "contextualRelevancy": "Pertinence contextuelle",
+          "contextualRelevancyDesc": "Le contexte récupéré est-il pertinent pour la question ?",
+          "contextualPrecision": "Précision contextuelle",
+          "contextualPrecisionDesc": "Les extraits les plus pertinents sont-ils classés en premier ? Nécessite une réponse attendue.",
+          "contextualRecall": "Rappel contextuel",
+          "contextualRecallDesc": "Le contexte couvre-t-il tout ce que la réponse attendue nécessite ? Nécessite une réponse attendue.",
+          "none": "Sélectionne au moins une métrique pour lancer un run."
         },
         "metrics": {
           "label": "Métriques personnalisées",
@@ -1598,43 +1642,40 @@
           "criteria": "Critère à évaluer",
           "criteriaPlaceholder": "ex. La réponse doit nommer la méthode et citer le chiffre rapporté du papier.",
           "parameters": "Champs évalués par le juge",
+          "parameterOptions": {
+            "input": "Entrée",
+            "actualOutput": "Réponse produite",
+            "expectedOutput": "Réponse attendue",
+            "retrievalContext": "Contexte récupéré"
+          },
           "threshold": "Seuil de réussite"
         },
         "recap": {
           "title": "Récapitulatif",
-          "campaign": "Campagne",
           "targetType": "Type de cible",
           "managed": "Instance gérée",
           "runtime": "Agent runtime",
           "instance": "Instance",
           "runtimeId": "Identifiant runtime",
           "agent": "Identifiant d'agent",
-          "dataset": "Jeu de données",
-          "cases": "Cas",
           "judge": "Juge",
           "concurrency": "Concurrence",
           "timeout": "Délai",
+          "metrics": "Métriques",
           "customMetrics": "Métriques personnalisées",
           "profile": "Profil",
           "profileAuto": "Automatique"
-        },
-        "nav": {
-          "prev": "Précédent",
-          "next": "Suivant",
-          "launch": "Lancer la campagne"
-        },
-        "launching": "Lancement...",
-        "success": "Campagne en file d'attente",
-        "error": "Échec de la création de la campagne"
+        }
       },
       "detail": {
-        "cancelError": "Impossible d'annuler la campagne",
+        "cancelError": "Impossible d'annuler l'exécution",
         "analyzeError": "Échec de l'analyse",
-        "loading": "Chargement de la campagne...",
-        "notFound": "Campagne introuvable",
+        "loading": "Chargement de l'exécution...",
+        "notFound": "Exécution introuvable",
         "loadingCases": "Chargement des cas...",
-        "subtitle": "Campagne · {{id}}",
+        "subtitle": "Exécution · {{id}}",
         "back": "Retour",
+        "rerun": "↻ Relancer cette exécution",
         "cancel": "Annuler",
         "cancelling": "Annulation...",
         "analyze": "Analyser",
@@ -1648,10 +1689,12 @@
         "stats": {
           "passed": "Réussis",
           "failed": "Échoués",
+          "insufficient": "Insuffisants",
           "execErrors": "Erreurs exéc.",
           "scoringErrors": "Erreurs scoring"
         },
         "metricScores": "Scores par métrique",
+        "metricScoresPartial": "Scores par métrique — partiel, {{done}}/{{total}} cas notés pour l'instant",
         "globalScore": "Score global",
         "analysisTitle": "Analyse",
         "risk": "risque : {{level}}",
@@ -1659,12 +1702,12 @@
         "strengths": "Points forts",
         "weaknesses": "Points faibles",
         "recommendations": "Recommandations",
-        "campaignInfo": "Informations de la campagne",
+        "campaignInfo": "Informations de l'exécution",
         "meta": {
-          "dataset": "Jeu de données",
+          "dataset": "Évaluation",
           "profile": "Profil de scoring",
           "judge": "Juge",
-          "team": "Équipe",
+          "team": "Identifiant d'évaluation",
           "created": "Créée le",
           "started": "Démarrée le",
           "completed": "Terminée le"
@@ -1679,6 +1722,8 @@
           "metrics": "Métriques"
         },
         "caseTitle": "Détail du cas",
+        "copyJson": "Copier en JSON",
+        "copied": "Copié",
         "latency": "Latence",
         "input": "Entrée",
         "expected": "Sortie attendue",
@@ -1690,6 +1735,100 @@
         "skipped": "ignoré",
         "passed": "réussi",
         "failed": "échoué"
+      },
+      "evaluations": {
+        "title": "Évaluations",
+        "description": "Jeux de cas versionnés et réutilisables. Ouvrez-en une pour voir ses exécutions.",
+        "new": "+ Nouvelle évaluation",
+        "empty": "Aucune évaluation. Créez-en une pour commencer.",
+        "openRuns": "Exécutions",
+        "caseCount": "{{count}} cas",
+        "col": {
+          "name": "Nom / ID",
+          "version": "Version",
+          "author": "Auteur",
+          "origin": "Origine",
+          "cases": "Cas"
+        },
+        "origin": {
+          "upload": "Import",
+          "manual": "Manuel",
+          "capture": "Capture"
+        }
+      },
+      "evaluationCreate": {
+        "title": "Nouvelle évaluation",
+        "description": "Nommez l'évaluation et donnez-lui ses cas. Aucune exécution n'est lancée.",
+        "name": {
+          "label": "Nom de l'évaluation",
+          "placeholder": "ex. usage-arxivai"
+        },
+        "versionNote": "Réutiliser un nom existant crée une nouvelle version (v1 → v2), qui devient la version courante.",
+        "submit": "Créer l'évaluation",
+        "saving": "Création...",
+        "success": "Évaluation « {{name}} » créée en {{version}}",
+        "error": "Échec de la création de l'évaluation",
+        "mode": {
+          "label": "Comment fournir les cas ?",
+          "import": {
+            "title": "Importer mon dataset",
+            "desc": "Un fichier JSON contenant les cas (input / expected_output)"
+          },
+          "manual": {
+            "title": "Écrire les cas à la main",
+            "desc": "Saisir chaque cas directement dans le formulaire"
+          }
+        }
+      },
+      "runs": {
+        "casesError": "Erreur lors du chargement des cas.",
+        "noCases": "Aucun cas disponible.",
+        "drawerTitle": "Cas de l'exécution",
+        "drawerHint": "Cliquez sur un cas pour voir tous les détails",
+        "inputLabel": "Entrée",
+        "executionError": "Erreur d'exécution",
+        "viewFullDetail": "Voir le détail complet →",
+        "metricsCount": "{{count}} métriques",
+        "targetInstance": "Instance · {{id}}",
+        "detail": "Détail",
+        "deleteTitle": "Supprimer l'exécution",
+        "deleteSuccess": "Exécution supprimée",
+        "deleteError": "Échec de la suppression de l'exécution",
+        "loadError": "Erreur lors du chargement des exécutions.",
+        "description": "Exécutions de cette évaluation",
+        "backToEvaluations": "Évaluations",
+        "newRun": "+ Nouvelle exécution",
+        "rerun": "↻ Relancer · {{target}}",
+        "rerunHint": "Relance immédiatement avec la dernière cible ({{target}} · {{model}}). Utilisez « Nouvelle exécution… » pour en choisir une autre.",
+        "rerunRow": "↻ Relancer",
+        "empty": "Aucune exécution pour cette évaluation",
+        "versionLabel": "Évaluation {{version}}",
+        "deleteMessage": "Supprimer l'exécution {{id}} ? Cela supprime définitivement ses cas, métriques et événements.",
+        "kpi": {
+          "active": "Exécutions actives",
+          "completed": "Exécutions terminées",
+          "casesEvaluated": "Cas évalués",
+          "criticalFailures": "Échecs critiques"
+        },
+        "col": {
+          "run": "Exécution / ID",
+          "target": "Cible",
+          "state": "État",
+          "verdict": "Verdict",
+          "progress": "Progression",
+          "scores": "Profil / juge"
+        }
+      },
+      "runCreate": {
+        "title": "Nouvelle exécution",
+        "description": "Évaluation « {{name}} » — choisissez l'agent à évaluer.",
+        "submit": "Lancer l'exécution",
+        "starting": "Lancement...",
+        "success": "Exécution lancée",
+        "error": "Échec du lancement de l'exécution",
+        "recap": {
+          "evaluation": "Évaluation"
+        }
       }
     },
     "taskActivity": {

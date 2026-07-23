@@ -50,6 +50,17 @@ const injectedRtkApi = api.injectEndpoints({
     >({
       query: (queryArg) => ({ url: `/control-plane/v1/users`, method: "POST", body: queryArg.createUserRequest }),
     }),
+    getUsersByIdsControlPlaneV1UsersByIdsGet: build.query<
+      GetUsersByIdsControlPlaneV1UsersByIdsGetApiResponse,
+      GetUsersByIdsControlPlaneV1UsersByIdsGetApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/control-plane/v1/users/by-ids`,
+        params: {
+          ids: queryArg.ids,
+        },
+      }),
+    }),
     deleteUserControlPlaneV1UsersUserIdDelete: build.mutation<
       DeleteUserControlPlaneV1UsersUserIdDeleteApiResponse,
       DeleteUserControlPlaneV1UsersUserIdDeleteApiArg
@@ -142,6 +153,17 @@ const injectedRtkApi = api.injectEndpoints({
         url: `/control-plane/v1/teams/${queryArg.teamId}/members`,
         method: "POST",
         body: queryArg.addTeamMemberRequest,
+      }),
+    }),
+    searchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGet: build.query<
+      SearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetApiResponse,
+      SearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/control-plane/v1/teams/${queryArg.teamId}/candidate-members`,
+        params: {
+          query: queryArg.query,
+        },
       }),
     }),
     removeTeamMemberControlPlaneV1TeamsTeamIdMembersUserIdDelete: build.mutation<
@@ -256,6 +278,27 @@ const injectedRtkApi = api.injectEndpoints({
         method: "DELETE",
       }),
     }),
+    postTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPost: build.mutation<
+      PostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPostApiResponse,
+      PostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPostApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/control-plane/v1/teams/${queryArg.teamId}/agent-instances/with-assets`,
+        method: "POST",
+        body: queryArg.bodyPostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPost,
+      }),
+    }),
+    patchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatch:
+      build.mutation<
+        PatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatchApiResponse,
+        PatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatchApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/control-plane/v1/teams/${queryArg.teamId}/agent-instances/${queryArg.agentInstanceId}/with-assets`,
+          method: "PATCH",
+          body: queryArg.bodyPatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatch,
+        }),
+      }),
     getTeamPromptsControlPlaneV1TeamsTeamIdPromptsGet: build.query<
       GetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetApiResponse,
       GetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetApiArg
@@ -800,6 +843,10 @@ export type CreateUserControlPlaneV1UsersPostApiResponse = /** status 201 Succes
 export type CreateUserControlPlaneV1UsersPostApiArg = {
   createUserRequest: CreateUserRequest;
 };
+export type GetUsersByIdsControlPlaneV1UsersByIdsGetApiResponse = /** status 200 Successful Response */ UserSummary[];
+export type GetUsersByIdsControlPlaneV1UsersByIdsGetApiArg = {
+  ids: string[];
+};
 export type DeleteUserControlPlaneV1UsersUserIdDeleteApiResponse = unknown;
 export type DeleteUserControlPlaneV1UsersUserIdDeleteApiArg = {
   userId: string;
@@ -849,6 +896,12 @@ export type AddTeamMemberControlPlaneV1TeamsTeamIdMembersPostApiResponse = unkno
 export type AddTeamMemberControlPlaneV1TeamsTeamIdMembersPostApiArg = {
   teamId: string;
   addTeamMemberRequest: AddTeamMemberRequest;
+};
+export type SearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetApiResponse =
+  /** status 200 Successful Response */ UserSummary[];
+export type SearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetApiArg = {
+  teamId: string;
+  query: string;
 };
 export type RemoveTeamMemberControlPlaneV1TeamsTeamIdMembersUserIdDeleteApiResponse =
   /** status 202 Successful Response */ RemoveTeamMemberResponse;
@@ -920,6 +973,20 @@ export type DeleteTeamAgentInstanceControlPlaneV1TeamsTeamIdAgentInstancesAgentI
   teamId: string;
   agentInstanceId: string;
 };
+export type PostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPostApiResponse =
+  /** status 201 Successful Response */ ManagedAgentInstanceSummary;
+export type PostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPostApiArg = {
+  teamId: string;
+  bodyPostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPost: BodyPostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPost;
+};
+export type PatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatchApiResponse =
+  /** status 200 Successful Response */ ManagedAgentInstanceSummary;
+export type PatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatchApiArg =
+  {
+    teamId: string;
+    agentInstanceId: string;
+    bodyPatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatch: BodyPatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatch;
+  };
 export type GetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetApiResponse =
   /** status 200 Successful Response */ PromptSummary[];
 export type GetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetApiArg = {
@@ -1508,6 +1575,9 @@ export type ManagedAgentUiHints = {
   textarea?: boolean;
   group?: string | null;
   hide?: boolean;
+  widget?: string | null;
+  visible_when?: string | null;
+  advanced?: boolean;
 };
 export type ManagedAgentFieldSpec = {
   key: string;
@@ -1537,6 +1607,12 @@ export type UiHints = {
   textarea?: boolean;
   group?: string | null;
   hide?: boolean;
+  /** Names a frontend form widget to render this field instead of the type-derived default input. Resolved first against the owning capability plugin's `configWidgets` (custom widgets, AGENT-CAPABILITY-RFC §9 item 4, #1903), then against stock widgets — known stock ids: 'document_libraries' (library/document tree picker for an array of library tag ids). Unknown ids fall back to the default input, so older frontends degrade gracefully. */
+  widget?: string | null;
+  /** Key of a sibling field in the same form: this field is only shown while that sibling's effective value (current input or its declared default) is truthy. Display-only — the value is kept, and backends must not rely on the field being hidden. */
+  visible_when?: string | null;
+  /** Renders the field inside the form's collapsed 'Advanced settings' disclosure instead of the main section. Display-only. */
+  advanced?: boolean;
 };
 export type FieldSpec = {
   key: string;
@@ -1615,7 +1691,9 @@ export type CapabilityCatalogEntry = {
   assets?: AssetSlot[];
   team_scope?: TeamScopePolicy;
   kind?: "tool" | "agent";
+  execution_models?: ("react" | "graph")[];
   route_base_url?: string | null;
+  default_capability_ids?: string[];
 };
 export type AgentTemplateSummary = {
   template_id: string;
@@ -1649,6 +1727,8 @@ export type ManagedAgentInstanceSummary = {
   created_at?: string | null;
   updated_at?: string | null;
   created_by?: string | null;
+  /** Uid of the last user who edited the instance (#1952). Server-authoritative and read-only; null when the instance was never user-edited (seed/startup saves have no acting user). */
+  updated_by?: string | null;
   /** Current user-set values for this instance's tunable fields. Keyed by ManagedAgentFieldSpec.key. Empty when no fields have been customised. */
   tuning_field_values?: {
     [key: string]:
@@ -1726,6 +1806,21 @@ export type UpdateAgentInstanceRequest = {
     };
   } | null;
 };
+export type BodyPostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPost = {
+  /** CreateAgentInstanceRequest as a JSON object string */
+  request: string;
+  /** One '{capability_id}:{slot_key}' reference per uploaded file, aligned by index with asset_files. */
+  asset_slots?: string[];
+  asset_files?: string[];
+};
+export type BodyPatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatch =
+  {
+    /** UpdateAgentInstanceRequest as a JSON object string */
+    request: string;
+    /** One '{capability_id}:{slot_key}' reference per uploaded file, aligned by index with asset_files. */
+    asset_slots?: string[];
+    asset_files?: string[];
+  };
 export type PromptCategory =
   | "doc-assist"
   | "summary"
@@ -2317,6 +2412,8 @@ export const {
   useListUsersControlPlaneV1UsersGetQuery,
   useLazyListUsersControlPlaneV1UsersGetQuery,
   useCreateUserControlPlaneV1UsersPostMutation,
+  useGetUsersByIdsControlPlaneV1UsersByIdsGetQuery,
+  useLazyGetUsersByIdsControlPlaneV1UsersByIdsGetQuery,
   useDeleteUserControlPlaneV1UsersUserIdDeleteMutation,
   useGetUserDetailsControlPlaneV1UserGetQuery,
   useLazyGetUserDetailsControlPlaneV1UserGetQuery,
@@ -2335,6 +2432,8 @@ export const {
   useListTeamMembersControlPlaneV1TeamsTeamIdMembersGetQuery,
   useLazyListTeamMembersControlPlaneV1TeamsTeamIdMembersGetQuery,
   useAddTeamMemberControlPlaneV1TeamsTeamIdMembersPostMutation,
+  useSearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetQuery,
+  useLazySearchCandidateTeamMembersControlPlaneV1TeamsTeamIdCandidateMembersGetQuery,
   useRemoveTeamMemberControlPlaneV1TeamsTeamIdMembersUserIdDeleteMutation,
   useGrantTeamMemberRoleControlPlaneV1TeamsTeamIdMembersUserIdRolesPostMutation,
   useRevokeTeamMemberRoleControlPlaneV1TeamsTeamIdMembersUserIdRolesRelationDeleteMutation,
@@ -2353,6 +2452,8 @@ export const {
   usePostTeamAgentInstanceControlPlaneV1TeamsTeamIdAgentInstancesPostMutation,
   usePatchTeamAgentInstanceControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdPatchMutation,
   useDeleteTeamAgentInstanceControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdDeleteMutation,
+  usePostTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesWithAssetsPostMutation,
+  usePatchTeamAgentInstanceWithAssetsControlPlaneV1TeamsTeamIdAgentInstancesAgentInstanceIdWithAssetsPatchMutation,
   useGetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetQuery,
   useLazyGetTeamPromptsControlPlaneV1TeamsTeamIdPromptsGetQuery,
   usePostTeamPromptControlPlaneV1TeamsTeamIdPromptsPostMutation,

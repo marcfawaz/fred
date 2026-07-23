@@ -42,6 +42,22 @@
 > never routed to OpenFGA. Collaborative teams are unchanged: still OpenFGA
 > `CAN_READ`, still fail-closed. See §2.2.
 
+> ✅ **Per-tool-call reverify / service-agent regression fix — 2026-07-22
+> (EVAL-03 follow-up).** `ToolObservabilityMiddleware._reverify_team_authorization`
+> (added the same day to close a least-privilege gap — a stale/revoked team
+> membership was trusted for a whole ReAct turn after the one OpenFGA check at
+> turn start) called the low-level `check_permission_or_raise` primitive
+> unconditionally, without the `is_service_agent` bypass `_authorize_execution_or_raise`
+> already grants at turn start (EVAL-AUTH Solution A, above). This broke every
+> tool call made by the evaluation worker's service identity — turn start
+> passed, the first tool call then failed closed with `AuthorizationError`.
+> Fix: `_authorize_and_resolve` now stamps the trusted `is_service_agent`
+> verdict (computed once from the JWT, never from caller-supplied `context`)
+> into `PortableContext.baggage`; the per-tool-call reverify reads it and skips
+> the ReBAC check for service-agent callers, mirroring the turn-start decision
+> instead of re-deriving a stricter one. Regular users are unaffected — the
+> least-privilege re-check still runs for every non-service-agent call.
+
 This document is the authoritative design reference for the Phase 1 runtime
 execution contract. It describes what was frozen, where it lives, what the
 architectural boundaries are, and what is explicitly deferred.
@@ -272,12 +288,13 @@ agent pod is the execution authority (RUNTIME-07 rev. 2):
   (`fred_core.security.oidc`). Under the `c3` profile it validates issuer and
   audience strictly (`verify_aud=True`), and each pod validates `aud == its own
   client_id` (per-agent audience — anti-confused-deputy, decision D5c).
-- **Authorization** — for a **collaborative** `runtime_context.team_id` (anything
-  not a personal space), the pod runs a per-request OpenFGA check that the caller
-  holds `CAN_READ` on that team (the same relation the control-plane required
-  before it would mint a grant). This is the model already homologated on
-  `main`'s agentic-backend, re-instantiated per pod. A **personal space**
-  (`personal-<uid>`) is never checked against OpenFGA — see below.
+- **Authorization** — the pod runs a per-request OpenFGA check that the caller
+  holds `CAN_READ` on `runtime_context.team_id` (the same relation the
+  control-plane required before it would mint a grant). This is the model
+  already homologated on `main`'s agentic-backend, re-instantiated per pod, and
+  it applies uniformly to collaborative teams and **personal spaces** alike
+  (`personal-<uid>`) — see below for how a personal space's own `CAN_READ`
+  comes to hold true.
 - **Identity integrity** — `user_id` is taken from the validated token, never the
   request body; body-supplied tokens are neutralized.
 
@@ -286,37 +303,25 @@ authorizes teams the user actually has a relation to. A missing team on a manage
 request fails closed (403). The `ExecutionGrantAction` enum (`execute` / `resume`)
 survives as the `execution_action` field; the `ExecutionGrant` envelope does not.
 
-**Personal spaces are intrinsic ownership, not an OpenFGA relation (AUTHZ-05 item
-8b, 2026-07-13).** A personal space is a synthetic, system-recognized team
-(`fred_core.common.personal_team_id(uid)`) with no `team_metadata` row and no
-stored OpenFGA tuple of any kind — it is not a collaborative team and was never
-meant to route through `CAN_READ`. `_authorize_execution_or_raise` therefore
-special-cases it, before the OpenFGA branch, purely by identity comparison:
+**Personal spaces are real ReBAC team objects.** A personal space
+(`fred_core.common.personal_team_id(uid)`) has no `team_metadata` row — it
+stays a synthetic, system-recognized team on the control-plane product
+surface (`build_personal_team`) — but it is a first-class object in the ReBAC
+graph, exactly like a collaborative team. `agent_app.py` carries no
+personal-space-specific authorization code at all; the plain
+`rebac.check_user_team_permission_or_raise(user, CAN_READ, team_id)` call
+below handles it correctly, because `fred-core` self-heals the owner's own
+tuple and write-guards every other write to a personal team — see
+[`REBAC.md` § Personal teams](../platform/REBAC.md#personal-teams--self-provisioned-never-admin-writable-authz-08)
+for the full mechanism, shared by every backend, not just this runtime.
 
-- `team_id == personal_team_id(authenticated_user.uid)` (the caller's own
-  canonical personal space) → authorized as intrinsic ownership, audited
-  `personal_space_owner_authorized`, **no OpenFGA call**.
-- any other `personal-*` id (another user's personal space) → denied outright,
-  audited `personal_space_denied`, HTTP 403. This is a hard identity check, not
-  an OpenFGA lookup — a stray or residual OpenFGA tuple naming that id can never
-  grant access here.
-- the bare `"personal"` alias → also denied under this same rule once ReBAC is
-  active, rather than resolved as if it meant the caller's own space; it stays a
-  dev/CLI-only shorthand (see `fred_runtime/cli/entrypoint.py`).
-- any non-personal `team_id` (a real collaborative team) → unchanged, always the
-  OpenFGA `CAN_READ` check described above.
-- `service_agent` callers are unaffected: their team-scoped, OpenFGA-free
-  authorization (§ below, RFC EVAL-AUTH Solution A) is checked first and returns
-  before the personal-space branch is reached.
-- `platform_admin`/`platform_observer` confer no implicit access here, personal
-  or collaborative — this carve-out is identity-only (JWT subject vs. the
-  requested personal id), never role-based.
-
-No Keycloak group, claim, or role feeds this decision anywhere — the removal of
-`groups_list_to_relations`/`_user_contextual_relations` (item 8b) is unaffected;
-this carve-out replaces the contextual (never-persisted) `team_member` relation
-that helper used to grant for personal spaces, with an explicit, narrower check
-local to the runtime.
+Net effect at this call site: the caller's own personal space authorizes
+(audited `rebac_authorized`, same as any other team); another user's personal
+space, or the bare `"personal"` alias (for which no tuple is ever
+provisioned), denies (audited `rebac_denied`) — with no special-casing needed
+in this file. `service_agent` callers are unaffected: their team-scoped,
+OpenFGA-free authorization (§ below, RFC EVAL-AUTH Solution A) is checked
+first and returns before the `CAN_READ` check is reached.
 
 **Architectural constraint (unchanged):**
 
@@ -981,6 +986,44 @@ binding PRIVATELY (wrapping the same `VectorSearchClient` path as
 - No OpenAPI/wire-schema change: the port is internal DI, not a serialized
   request/response model.
 
+**Amendment (2026-07-21).** `search()` gained an additive keyword
+`attachments_only: bool = False`: the adapter then searches the session scope
+only (`include_session_scope=True, include_corpus_scope=False`) — the
+conversation's attached files, never the corpus. First consumer:
+`document_access.search_attachments_only` (the capability also drops its
+scope-picker chat control when the flag is on). `general_only` RAG scope keeps
+precedence (no search at all).
+
+---
+
+### 8.16 ✅ `agent_assets` / `document_content` / `document_folders` ports — #1903 PPT filler (July 2026)
+
+**What changed.** Three more OPTIONAL, additive ports on `RuntimeServices`
+(`fred_sdk/contracts/runtime.py`), same class of change and same §8.15 doctrine
+(scope/key parameters only; binding + token captured privately by the
+fred-runtime adapters):
+
+- `agent_assets: AgentAssetPort | None` — per-agent-instance config-asset
+  storage (`store`/`fetch`/`delete` by slot-relative key). Backed by the KF
+  virtual-filesystem sub-area `teams/{t}/agents/{agent_instance_id}/config/...`
+  (`AgentConfigAssetsAdapter`). Injected BOTH turn-time
+  (`_build_runtime_services`) and save-time
+  (`_build_capability_save_services`, which now also receives the
+  `agent_instance_id` from the validate-config form and stamps it on the
+  privately-held `RuntimeContext`).
+- `document_content: DocumentContentPort | None` — a corpus document's
+  ORIGINAL bytes by uid (KF `GET /raw_content/{uid}`, `DocumentContentAdapter`
+  over the new minimal `KfDocumentClient`).
+- `document_folders: DocumentFolderPort | None` — author folder string →
+  DOCUMENT tag id (save/analyze-time validation) and folder-tag document
+  listing (KF `GET /tags` + `POST /documents/metadata/browse`,
+  `DocumentFolderAdapter` over the new `KfTagClient`).
+
+No OpenAPI/wire-schema change on the execution surface. The pod's
+`validate-config` endpoint behavior is unchanged except that its save services
+now carry the three ports, letting an asset-bearing capability store binaries
+and resolve folders during `validate_config` (RFC AGENT-CAPABILITY §3.4/§3.8).
+
 ---
 
 ### 8.13 ✅ `RuntimeContext.user_groups` removed — AUTHZ-05 final sweep (July 2026)
@@ -1007,6 +1050,536 @@ update-runtime-api`, 1-line diff); frontend `tsc --noEmit` clean.
 `apps/frontend/src/slices/agentic/agenticOpenApi.ts` still carries a stale
 `user_groups` field — no Makefile target regenerates it (looks like a
 dead/legacy generated client, out of scope for this sweep).
+
+---
+
+### 8.16 ✅ `DELETE /agents/checkpoints/{session_id}` returns a deleted count (July 2026)
+
+**What changed.** The endpoint (`agent_app.py::delete_checkpoint_thread`) went
+from `status_code=204, response_model=None` (bare, bodyless response) to
+`status_code=200` returning `{"deleted": n}` — `n` is the number of rows
+removed from the checkpoints table for that thread, mirroring the sibling
+`DELETE /agents/sessions/{session_id}` (history) endpoint's `{"deleted": n}`
+shape exactly. `FredSqlCheckpointer.adelete_thread` (`sql_checkpointer.py`) now
+returns that count (`# type: ignore[override]` — LangGraph's
+`BaseCheckpointSaver.adelete_thread` is typed `-> None`) instead of `None`,
+computed from the `checkpoints` table's delete rowcount; the `writes`/`blobs`/
+`thread_owner` rows are still purged but are not separately counted.
+
+**Why.** `ConversationErasureService._erase_runtime_checkpoint` (control-plane,
+CTRLP-12) had no way to report how many checkpoint rows an erasure actually
+purged — every conversation erasure receipt showed `deleted_count=None` for
+the `runtime_checkpoint` store regardless of whether it purged one checkpoint
+or a hundred, while every other store in the same receipt reported a real
+count. Discovered live while testing the SQL-agent/tabular observability path.
+
+**Wire impact.** Regenerated `libs/fred-runtime/openapi.json` (`make
+generate-openapi`, gitignored artifact — no frontend-facing generated client
+consumes this pod-internal endpoint). `pod_client.py::PodClient.delete_checkpoint`
+(fred-agents-cli) updated to return the count too, mirroring its sibling
+`delete_session_messages`. `fred-runtime` version bumped `3.3.3` → `3.3.4`.
+
+---
+
+### 8.17 ✅ `DeepAgentRuntime` gets the same observability middleware as ReAct (July 2026)
+
+**What changed.** `DeepAgentRuntime.build_executor` (`deep/deep_runtime.py`)
+now always leads the middleware list it hands to `deepagents.create_deep_agent`
+with `TracingKpiMiddleware` and `ToolObservabilityMiddleware` — the same two
+instances, same construction, that `build_react_platform_middleware_frame`
+wires for every ReAct agent. The pre-existing filesystem-tool guard
+(`ToolCallLimitMiddleware` per disabled filesystem tool, unchanged) now
+follows them instead of being the only middleware present.
+
+**Why.** `DeepAgentRuntime` overrides `build_executor` entirely and never
+calls `build_react_platform_middleware_frame`/`_create_compiled_react_agent`
+— it builds its own `deepagents`-native graph. That meant a Deep turn emitted
+no `[LLM][CALL]`/`[LLM][RESPONSE]` logs, no `llm.call_latency_ms` /
+`agent.tool_latency_ms` KPI, and no `agent.tool.invocation.*` audit events:
+the same guarantees `docs/swift/platform/OBSERVABILITY-AND-AUDIT.md` §9
+documents for every other execution path, silently absent for Deep since the
+runtime was first added. Found and fixed while scoping DeepAgent's move from
+dormant to visible ahead of the go-live validation, landed in the same change
+that registered `fred.github.deep_assistant` (`apps/fred-agents`) — the first
+concrete `DeepAgentDefinition` in any app — so no Deep turn has ever run
+unaudited in a shipped environment.
+
+**Consequences.**
+
+- No change to Deep's typed input/output/events, its filesystem-tool policy,
+  or its explicit non-support for tool approval /
+  `max_tool_calls_per_turn` (still `NotImplementedError` — out of scope here).
+- `create_deep_agent`'s own `middleware=` parameter is the extension point;
+  `TracingKpiMiddleware`/`ToolObservabilityMiddleware` needed no changes
+  themselves — both were already generic `AgentMiddleware` implementations,
+  not ReAct-specific.
+- Regression coverage:
+  `libs/fred-runtime/tests/test_deep_agent_middleware.py`.
+
+### 8.18 ✅ `FieldSpec.ui.widget` stock form-widget hint — #2023 (2026-07-20)
+
+**What changed.** `UIHints` (`fred_sdk/contracts/models.py`) gained an optional
+`widget: str | None` field. It names a frontend stock **form** widget to render
+that field in the agent-creation/edit form instead of the type-derived default
+input — distinct from the chat-turn `ChatControlSpec.widget` registry. First
+consumer: `document_access.library_tag_ids` sets
+`ui=UIHints(widget="document_libraries")`, rendered by the frontend
+`TuningFieldRenderer` as the `DocumentLibraryScopePicker` tree instead of a raw
+tag-id `TagInput`. Control-plane's `ManagedAgentUiHints` mirror gained the same
+field.
+
+**Why.** Users had to hand-type library tag ids when configuring the
+document-access capability on an agent; the tree picker already existed for the
+chat composer. Additive and backward compatible: `None`/unknown widget ids fall
+back to the default input, and older pods simply omit the field.
+
+`controlPlaneOpenApi.ts` and `runtimeOpenApi.ts` regenerated
+(`make update-control-plane-api` / `make update-runtime-api`).
+
+**Amendment (2026-07-21).** `UIHints` also gained `visible_when: str | None` —
+the key of a sibling field in the same form; the field is only rendered while
+that sibling's effective value (current input or declared default) is truthy.
+Display-only: the hidden field keeps its stored value, and backends must not
+rely on it being hidden. First consumer: the legacy search tool's
+`chat_options.bound_library_ids` is gated on `chat_options.libraries_binding`
+in the pod `mcp_catalog.yaml`.
+
+### 8.19 ✅ Personal-team authorization moved to fred-core, real ReBAC tuple — AUTHZ-08 (2026-07-20)
+
+**What changed.** `agent_app.py::_authorize_execution_or_raise` no longer
+special-cases personal spaces (the identity-only guard from AUTHZ-05 item 8b is
+deleted). Personal teams are now real ReBAC team objects: `fred-core`'s
+`RebacEngine.check_user_permission_or_raise`/`has_user_permission` self-heal
+the owner's own `team_editor` tuple on a personal team on first touch, and
+`RebacEngine.add_relation` refuses any other tuple naming a personal team. See
+§2.2 above and [`REBAC.md` § Personal teams](../platform/REBAC.md#personal-teams--self-provisioned-never-admin-writable-authz-08)
+for the full design.
+
+**Why.** Live-stack testing (2026-07-20) found the AUTHZ-05 item 8b guard was
+never generalized past `agent_app.py` — every other consumer of a personal
+`team_id` (knowledge-flow-backend's filesystem/corpus/tag routes,
+`openai_compat_router.py`, `tasks/authz.py`, control-plane's evaluations API)
+still assumed OpenFGA held the answer, and it didn't: some crashed with an
+unhandled 500, most wrongly 403'd the space's own owner. A real, narrowly
+write-guarded tuple fixes every one of those call sites from one change in
+`fred-core`, with no per-caller special-casing, and unlike an identity-only
+guard it also makes `ListObjects`/enumeration (`lookup_user_resources`) work
+correctly for personal spaces.
+
+No OpenAPI/type changes — this is authorization-internals only.
+
+### 8.20 ✅ Personal-team enumeration self-heal — AUTHZ-08 follow-up (2026-07-21)
+
+**What changed.** §8.19's claim that a real tuple "makes `ListObjects`/
+enumeration (`lookup_user_resources`) work correctly for personal spaces" was
+not yet true when written: self-heal was wired into the permission-*check*
+methods only. `fred-core`'s `RebacEngine.lookup_user_resources` now self-heals
+the caller's own personal-team tuple too, before enumerating — see
+[`REBAC.md` § Personal teams](../platform/REBAC.md#personal-teams--self-provisioned-never-admin-writable-authz-08).
+
+**Why.** A first-touch user whose first authenticated call was an
+enumeration (e.g. `GET /fs/list?path=/teams`, listing "teams I can read")
+rather than a permission check on a known team id got an empty result — their
+own personal team was silently missing until some other call happened to
+provision it first. No OpenAPI/type changes.
+
+### 8.21 ✅ `ToolResultRuntimeEvent.latency_ms` — chat trace detail restored (2026-07-22)
+
+**What changed.** `ToolResultRuntimeEvent` (`fred_sdk/contracts/runtime.py`)
+gains an additive `latency_ms: int | None = None` field. `react_runtime.py`
+already computed the wall-clock duration of every tool call to close the
+paired `tool_use` `ThoughtEndEvent` (`_elapsed_ms_since(thought_started_at)`)
+— it now attaches that same value to the `ToolResultRuntimeEvent` itself
+instead of only the bookkeeping thought. `agent_app.py`'s history-persistence
+path threads it into `make_tool_result(..., latency_ms=...)` (the
+`ToolResultPart.latency_ms` field already existed in `fred-core`'s
+`history_schema.py` but was never populated by any caller). OpenAPI/generated
+client regenerated (`make update-runtime-api`).
+
+On the frontend, `useChatSse.ts` now copies `event.latency_ms` onto the
+`ToolResultPart` it builds for the `tool_result` SSE case (previously
+dropped, mirroring how `sources` was already handled for the `final` event
+but not `tool_result`). `traceUtils.groupTraceEntries()` also stops emitting
+a solo trace row for the synthetic `tool_use`-phase thought that brackets
+every tool call: that row's title ("Calling `<tool>`") and its `conclusion`
+were always the hardcoded literal `"Done"`/`"Error"` from `react_runtime.py`
+— purely redundant bookkeeping, not agent-authored reasoning — and produced
+one repeated, information-free "Done" row per tool call in the chain-of-thought
+list. The paired `tool_call`/`tool_result` combo row already shows the
+humanized tool label and the status dot, and now also shows the real latency.
+Genuine authored thoughts (`planning`/`observation`/`reflection`/`synthesis`)
+are unaffected — their `conclusion` is real agent-written text, not this
+synthetic placeholder.
+
+Separately, `TraceDetailDrawer`'s tool-result view (previously a blanket
+`{action, status, latency}` redaction for every tool, per #1774/CHAT-13 —
+see §8.6's sibling UX work) now recognizes two common, specifically-curated
+content shapes from `ToolResultPart.content` and renders them richly instead
+of redacting them: a tabular/SQL tool result (`{sql_query, rows, error}`,
+e.g. `knowledge-flow-backend`'s `RawSQLResponse`) shows the executed SQL and a
+row preview; a RAG/vector-search tool result (`{query, hits}`) shows the
+search query and the retrieved hits via the existing `SourcesPanel` molecule.
+Any other tool shape still falls back to the original redacted view — the
+redaction default from #1774 is preserved for unrecognized tools, only two
+specifically useful shapes are now exempted from it.
+
+**Why.** User-reported regression (chain-of-thought review, 2026-07-22): the
+#1774/CHAT-13 fix for noisy raw tool identifiers (see §8.6 area) overcorrected
+by discarding all tool-result detail, including the two kinds of information
+users actually look for mid-answer — the SQL query behind a numeric answer,
+and the sources behind a RAG citation — and left `latency_ms` permanently
+empty because no event in the pipeline ever populated it, while the
+chain-of-thought list repeated a synthetic, content-free "Done" once per tool
+call. No new contract surface was needed: `content` already carried the SQL
+query and RAG hits (per-tool `sources` on `ToolResultRuntimeEvent` exist too,
+but are still only consumed in aggregate on the final message — wiring
+per-call `sources` through `ToolResultPart` is a possible fast-follow, not
+done here since `content` already covers the citation case).
+
+---
+
+### 8.21 ✅ `RuntimeServices.document_tree` + `document_summarize` ports — #1906 follow-up (2026-07-21)
+
+**What changed.** Two new OPTIONAL, additive ports on the frozen
+`RuntimeServices` dataclass (`fred_sdk/contracts/runtime.py`), completing the
+#1906 document-access pilot — the same class of change as §8.15 (default
+`None`, backward-compatible, no wire-schema impact):
+
+```python
+class DocumentTreePort(ABC):
+    async def tree(
+        self,
+        *,
+        working_directory: str | None = None,
+        library_tag_ids: Sequence[str] | None = None,
+        max_chars: int = 6000,
+    ) -> DocumentTreeResult: ...
+
+class DocumentSummarizePort(ABC):
+    async def summarize(
+        self,
+        document_uid: str,
+        *,
+        instruction: str | None = None,
+        max_chars: int = 2000,
+    ) -> DocumentSummaryResult: ...
+
+@dataclass(frozen=True, slots=True)
+class RuntimeServices:
+    ...
+    document_tree: DocumentTreePort | None = None
+    document_summarize: DocumentSummarizePort | None = None
+```
+
+**Backing endpoints (Knowledge Flow).** `POST /documents/tree` (scoped
+folder/document listing rendered as indented text, ReBAC-scoped through
+`TagService.list_all_tags_for_user` with `owner_filter`/`team_id`, leaves
+ReBAC-filtered via `MetadataService`) and synchronous
+`POST /documents/{document_uid}/summarize` (steerable `instruction`,
+`max_chars` budget, map-reduce for large documents; session attachments
+reconstructed from their vectors when the corpus lookup is denied/missing).
+
+**Doctrine.** Same as §8.15: scope parameters only; the adapters
+(`DocumentTreeAdapter`, `DocumentSummarizeAdapter`, fred-runtime) capture the
+per-turn binding privately through `KfDocumentClient`, stamp the
+`owner_filter`/`team_id` seam (tree — the #1899 team-leak guard), and are
+wired in `_build_runtime_services`. Transport failures are mapped onto the
+SDK-typed `DocumentPortCallError` (timeout flag + HTTP status) so the
+capability renders `is_error` tool results without importing the HTTP stack.
+`KfBaseClient._request_with_token_refresh` gained an additive per-request
+`read_timeout` override (`RuntimeTimeouts.summarize_read`, default 300s) for
+the long-running summarize path. First consumer: `document_access`'s
+`list_document_tree` + `summarize_document` tools (RFC §10.1).
+
+---
+
+### 8.22 ✅ `AgentCapability.tools()` — Graph agents can use capabilities (2026-07-22)
+
+**What changed.** `AgentCapability` (`fred-sdk/contracts/capability/base.py`) gains
+`tools(ctx) -> Sequence[BaseTool]`, the primary, execution-model-agnostic runtime
+surface (RFC §3.2); `middleware()` loses its `@abstractmethod` and defaults to
+wrapping `tools()` for `create_agent()`. `CapabilityAgentBlock` (`assembly.py`) gains a
+`tools` field built directly from `capability.tools(ctx)`, deduped by name with a named
+`CapabilityAssemblyError` on a cross-capability name collision. `agent_app.py`'s two
+ReAct-only gates (`_effective_capability_ids`, `_build_capability_block`) are removed —
+the block is now built identically for `ReActAgentDefinition` and `GraphAgentDefinition`.
+`GraphRuntime` (`graph_runtime.py`) accepts `capability_block` and merges
+`_adapted_capability_tools(...)` into `runtime_tools`, so a Graph node's
+`context.invoke_runtime_tool(...)` reaches a selected capability's tool.
+
+**The adapter.** A capability tool built `@tool(..., response_format="content_and_artifact")`
+(the `document_access` convention) silently drops its `ToolInvocationResult` artifact
+when invoked through `BaseTool.ainvoke()` with a plain args dict — the shape
+`invoke_runtime_tool` uses, versus the `ToolCall` dict `create_agent()`'s real ReAct
+loop uses. `_adapt_capability_tool_for_graph` (`graph_runtime.py`) calls the tool's
+underlying `.coroutine` directly (bypassing `.ainvoke()`'s response-shape handling
+entirely) and re-wraps the result as a bare `ToolInvocationResult` — the one return
+shape proven to survive a plain-dict `.ainvoke()` intact. `document_access`'s tool
+definition is unchanged; the adaptation lives entirely at this merge seam. A capability
+tool name colliding with an MCP-resolved runtime tool name raises
+`CapabilityAssemblyError` here too (both name spaces are in scope together for the
+first time at this seam).
+
+**Migrated onto `tools()`:** `document_access`, `demo.py`. **Deliberately `middleware()`-only:**
+`ppt_filler`, `writable_document` — genuine ReAct-specific hooks. This first landing left
+a real gap here (nothing stopped either from being *selected* on a Graph agent, where
+they'd silently contribute no tools) — closed the next day, §8.23.
+
+**Proof.** `apps/fred-agents/fred_agents/test_assistant` gained a `document` scenario
+(search → HITL confirm/discard → branch) exercised end to end on a real `GraphRuntime` +
+`CapabilityAgentBlock`, including the graceful-failure path when the capability isn't
+selected. `libs/fred-runtime/tests/test_graph_capability_bridge.py` proves the adapter
+is load-bearing with a control test that reproduces the artifact-loss bug when it is
+skipped. Validated against three real external agents that predate this change and use
+neither `tools()` nor `middleware()`-based capabilities (`dt-agents/aegis`,
+`dt-agents/dva_risk_validator_team`, `fred-samples/cvem_watch`) — zero regression.
+
+**Why.** Capabilities were designed ReAct-only (`middleware()` was the only hook); any
+`GraphAgentDefinition` selecting a real capability failed loudly. Teams building Graph
+agents (deterministic multi-step workflows, not just ReAct loops) had no way to reuse a
+shared capability like `document_access` — every Graph agent that needed the same
+document search had to hand-roll it via `declared_tool_refs`/`invoke_tool` instead. See
+RFC §3.2/§3.9 for the full design; `docs/swift/capabilities/AUTHORING.md` for the
+authoring-facing summary.
+
+### RFC reference
+
+`docs/swift/rfc/AGENT-CAPABILITY-RFC.md` §3.2, §3.9, §5.1.
+
+---
+
+### 8.23 ✅ Four correctness gaps in the Graph/capability bridge, closed (2026-07-23)
+
+**What changed.** Independent review (Codex) of §8.22's landing found four real gaps,
+verified against the code before fixing:
+
+1. **Silent capability loss on Graph, now loud.** Nothing stopped a Graph agent from
+   *selecting* `ppt_filler`/`writable_document` — they'd build without error and
+   silently contribute zero tools. `CapabilityManifest` gains
+   `execution_models: tuple[Literal["react", "graph"], ...] = ("react", "graph")`
+   (`fred-sdk/contracts/capability/manifest.py`); `ppt_filler` and `writable_document`
+   now declare `("react",)` explicitly. `_build_capability_block` (`agent_app.py`)
+   rejects a `GraphAgentDefinition`'s selection of a declared-ReAct-only capability with
+   a named `CapabilityError`, before any turn runs.
+2. **`document_access` silently corrupted two of its three tools on Graph.**
+   `list_document_tree` and `summarize_document` built their `ToolInvocationResult`
+   artifact with no payload (`tool_ref` only) — the real tree/summary text lived
+   entirely in `content`, which `_adapt_capability_tool_for_graph` (§8.22) discards by
+   design. A Graph node calling either got back a near-empty result. Fixed by mirroring
+   `search_documents_using_vectorization`'s pattern: the payload is now duplicated into
+   `blocks` (`ToolContentBlock(kind=TEXT, text=...)`). ReAct is unaffected — `content`
+   was and remains what the model reads.
+3. **`tools(ctx)` called twice per capability per assembly.** The default `middleware()`
+   calls `self.tools(ctx)` internally; `build_capability_agent_block` (`assembly.py`)
+   also called `capability.tools(ctx)` separately for `block.tools`/HITL binding — two
+   independent calls, a latent identity ambiguity for any future stateful `tools()`
+   implementation (today's are pure closures, so harmless in practice, but not
+   guaranteed by the contract). Fixed: `AgentCapability`'s tool-carrier middleware class
+   is now public (`ToolCarrierMiddleware`, exported from
+   `fred_sdk.contracts.capability`); `build_capability_agent_block` calls
+   `capability.tools(ctx)` exactly once and, when `middleware()` is the unoverridden
+   default, builds `ToolCarrierMiddleware` directly from that same result instead of
+   calling `middleware(ctx)` a second time.
+4. **`demo.py`'s tool was sync**, the one capability tool on the `.func`-only path
+   `_adapt_capability_tool_for_graph`'s own comment assumed nothing used — it would have
+   silently lost its `ui_parts` artifact under a Graph agent, via the same
+   plain-dict-`.ainvoke()` collapse §8.22's adapter exists to work around. Made `async`;
+   zero behavior change, no test changes needed.
+
+**Why.** All four are instances of the same failure mode RFC §3.9 names first: a broken
+or incompatible capability must suspend/fail loudly, never silently degrade. §8.22's
+landing enforced this for the *tools it built*; these four gaps were in what fed that
+mechanism (an undeclared incompatible capability, an artifact with nothing in it, an
+ambiguous tool identity, an unguarded sync path) — each one a way the "never silently
+degrade" rule could be violated without tripping any of the loud checks §8.22 added.
+
+### RFC reference
+
+`docs/swift/rfc/AGENT-CAPABILITY-RFC.md` §3.1, §3.2, §3.9.
+
+---
+
+### 8.24 ✅ Eight more correctness gaps in the Graph/capability bridge, closed (2026-07-23)
+
+**What changed.** A second independent review (Codex) of §8.23's fixes found that
+one of them was itself incomplete, plus seven more real gaps. All verified against
+the code before fixing, all fixed the same day:
+
+1. **`tools()` + overridden `middleware()` were either/or, not composed.**
+   §8.23's single-call fix (`build_capability_agent_block`) added a
+   `ToolCarrierMiddleware` only when `middleware()` was the unoverridden
+   default — a capability implementing BOTH `tools()` for plain tools AND
+   overriding `middleware()` for a genuine ReAct-only hook (the documented
+   pattern) silently lost its plain tools under `create_agent()` (they still
+   reached `block.tools`/Graph, but never ReAct's own binding). Fixed: a
+   `ToolCarrierMiddleware` is now added whenever `tools()` returns anything,
+   AND an overridden `middleware()` is always also called — only the default
+   `middleware()` is skipped (it would just rebuild the same thing from a
+   second `tools(ctx)` call).
+2. **The catalog still offered ReAct-only capabilities to Graph templates.**
+   `execution_models` was enforced at assembly (§8.23) but not reflected in
+   `GET /agents/templates`' `available_capabilities` — a user could select
+   `ppt_filler` on a Graph template in the UI and discover the incompatibility
+   only at first launch. `list_agent_templates` (`agent_app.py`) now filters
+   per template: a Graph template's `available_capabilities` excludes any
+   entry without `"graph"` in `execution_models`.
+3. **Capability HITL is still bypassed on Graph (stopgap, not full support).**
+   `CapabilityAgentBlock.hitl` is built but `GraphRuntime.invoke_runtime_tool`
+   never consults it. No production capability declares an active `HitlSpec`
+   today, so this was not yet a live regression — but the RFC presents
+   `HitlSpec` as a single, fail-closed, universal gate, which was not true for
+   Graph. `_build_capability_block` now refuses (named `CapabilityError`) a
+   Graph agent's selection of any capability with non-empty `hitl_specs()`.
+   Full Graph HITL support (reconciling Graph's own node-level pause/resume
+   with the per-tool gate) is real design work, deliberately deferred — this
+   stopgap keeps the "never silently degrade" guarantee intact meanwhile.
+4. **`document_access`'s FAILURE path was still degraded on Graph.** §8.23
+   fixed the success-path artifacts (tree/summary text duplicated into
+   `blocks`); `_document_tool_failure`'s artifact still carried only
+   `is_error=True` with no message — a Graph node learned THAT a call failed
+   but not WHY, and lost the "you likely passed a name instead of a uid"
+   recovery hint entirely. Fixed the same way: the diagnostic message is now
+   also in `blocks`.
+5. **`invoke_runtime_tool` hardcoded `is_error=False`** on its emitted
+   `ToolResultRuntimeEvent` regardless of what the tool actually reported — a
+   capability tool that correctly returns `is_error=True` (RFC §3.9: report,
+   never raise) had its own runtime trace contradict it. The graph node's own
+   `dict` return value was unaffected (it always carried the real
+   `is_error`), but the trace/observability layer was lying. Fixed: the event
+   now reads `is_error` off the normalized result.
+6. **The Graph adapter silently broke on a sync capability tool.** `_adapt_capability_tool_for_graph`
+   passed a `.coroutine`-less (sync-only) tool through unchanged, including
+   one declared `content_and_artifact` — which would silently lose its
+   artifact under Graph exactly like the async case the adapter exists to
+   fix, with no `.coroutine` available to adapt it correctly. Fixed: now
+   refuses loudly (`CapabilityAssemblyError`) instead of passing it through
+   broken. No capability tool in this codebase is sync today (§8.23 made the
+   last one, `demo.py`, async) — this closes the general SDK contract gap,
+   not just that one instance.
+7. **The adapter's 2-tuple unwrap fired for ANY 2-tuple return**, not only a
+   declared `content_and_artifact` one — a plain tool whose ordinary return
+   value happened to be some unrelated 2-tuple would have its second element
+   silently reinterpreted as an artifact. Fixed: gated on the tool's own
+   `response_format`.
+8. **`McpCapability`'s `agent_instructions` "non-negotiable grounding
+   contract" is ReAct-only, but the code said "each runtime consumes the half
+   that concerns it"** — true for tools (a separate, already
+   execution-model-agnostic path, `FredMcpToolProvider`), false-by-omission
+   for the prompt fragment, which only `middleware()` carries and Graph never
+   reads. Not fixed (no Graph-side prompt-injection mechanism exists to wire
+   it into) — the `_build_capability_block` docstring now says so explicitly
+   instead of implying parity that doesn't exist.
+
+**Also regenerated:** `GET /agents/templates`'/`available_capabilities`'
+`execution_models` field is additive on `CapabilityCatalogEntry` — the
+committed `runtimeOpenApi.ts` and `controlPlaneOpenApi.ts` clients were stale
+relative to the backend model (mandatory per this repo's contract-generation
+rule) and have been regenerated (`make update-runtime-api`,
+`make update-control-plane-api`; both are one-line additive diffs).
+
+**Why.** Same rule as §8.23: a broken or incompatible capability must fail
+loudly, never silently degrade (RFC §3.9). Each of these eight was a way that
+guarantee could still be violated after §8.23's fixes — an either/or that
+dropped a valid authoring pattern, a picker that still offered what the
+runtime would refuse, an enforcement gap in a mechanism the RFC calls
+universal, a diagnostic that vanished exactly when it mattered most, an event
+that misreported its own tool's answer, an adapter narrower than the contract
+it claims to implement, and a doc claim broader than the code beneath it.
+
+### RFC reference
+
+`docs/swift/rfc/AGENT-CAPABILITY-RFC.md` §3.2, §3.9, §5.4.
+
+---
+
+### 8.25 ✅ `execution_models` can no longer be silently forgotten; two more Graph diagnostics fixed (2026-07-23)
+
+**What changed.** A third independent review found that §8.23/§8.24's loud
+refusal only covered a capability that EXPLICITLY declared itself ReAct-only
+— an author who simply forgot to set `execution_models` on a
+`middleware()`-only capability kept the class default (`("react", "graph")`),
+which still silently passed the Graph assembly check and still contributed
+zero tools. Fixed with a new boot invariant, not a runtime one:
+`CapabilityRegistry._validate_execution_models` (new
+`InvalidExecutionModelError`) fails pod startup for any capability that
+overrides `middleware()` without implementing `tools()` and never explicitly
+set `execution_models` — detected via pydantic's `model_fields_set`, which
+distinguishes "the author wrote `execution_models=(...)`" from "the field
+kept its default," something a plain equality check cannot (writing the
+default value explicitly is indistinguishable from never mentioning it).
+`McpCapability` is exempt (its tools reach every execution model through
+`FredMcpToolProvider`, entirely outside `tools()`/`middleware()`). Two
+existing test fixtures (`corp_drive`, `greeter` in
+`test_capability_selection_1974.py`) needed the same explicit declaration
+`ppt_filler`/`writable_document` already carry — this invariant would have
+caught them too. `CapabilityManifest` also now rejects any `execution_models`
+that omits `"react"` — there is no Graph-only capability shape (every
+Graph-visible tool is also ReAct-visible, since `tools()` feeds both), so a
+declaration missing `"react"` cannot correspond to anything the runtime can
+build.
+
+Two more diagnostics gaps closed the same review found:
+- `document_access`'s 403/404 recovery hint (the "you likely passed a file
+  name" guidance) was appended to `message` AFTER `_document_tool_failure`
+  had already built the artifact from the shorter pre-hint message — so the
+  hint reached ReAct's `content` but not the artifact `blocks` a Graph agent
+  keeps. Fixed: the artifact is rebuilt with the final message.
+- `invoke_runtime_tool` read `is_error` off the NORMALIZED dict (§8.24's
+  fix), which could misclassify a coincidental `is_error`-named key on an
+  unrelated (e.g. MCP) tool's business payload as this platform's error
+  contract, and never populated `sources`/`ui_parts` on the event at all.
+  Fixed: `is_error`/`sources`/`ui_parts` are now read off the raw result
+  BEFORE normalization, and only when it is a genuine `ToolInvocationResult`
+  instance — never off an arbitrary dict. The span status also now reflects
+  `is_error` instead of always reporting "ok" on any non-exception return.
+
+**Why.** Same rule each of §8.22–§8.25 exists to enforce (RFC §3.9): a
+capability must fail loudly when it cannot do what's asked of it, never
+silently degrade. §8.23/§8.24 closed the cases where a capability KNEW it
+was incompatible; this round closes the case where the platform itself
+couldn't tell an author had never made that declaration at all, plus two
+more spots where a real diagnostic still silently evaporated on the one path
+(Graph) that only ever sees the artifact half of a tool's answer.
+
+### RFC reference
+
+`docs/swift/rfc/AGENT-CAPABILITY-RFC.md` §3.1, §3.2, §3.9.
+
+---
+
+### 8.26 ✅ `execution_models` boot check closed on the VALUE, not the declaration; graph KPI status fixed (2026-07-23)
+
+**What changed.** §8.25's boot invariant only caught a `middleware()`-only
+capability that never MENTIONED `execution_models` — one that explicitly
+wrote `execution_models=("react", "graph")` still passed every check
+(boot, manifest validator, Graph assembly) while still having zero
+`tools()` output, reproducing the exact silent no-op the whole chain of
+fixes exists to prevent. `CapabilityRegistry._validate_execution_models`
+(`InvalidExecutionModelError`, renamed from `UndeclaredExecutionModelError`)
+now checks the VALUE: any `middleware()`-only capability whose
+`execution_models` contains `"graph"` fails pod boot, whether that value
+came from the class default or an explicit declaration.
+`model_fields_set` is now used only to make the error message precise
+("never declared" vs. "declared, but to the wrong value"), not to decide
+whether to raise.
+
+Also fixed: `invoke_runtime_tool`'s KPI timer (`_graph_phase_timer`) never
+captured its `kpi_dims`, so a capability tool reporting failure via
+`ToolInvocationResult(is_error=True)` (never raising) recorded
+`status=ok` in the metric — the timer's own default when no exception
+propagates. Mirrors the canonical `invoke_tool` pattern now:
+`kpi_dims["status"] = "error"` when the typed result reports failure.
+
+**Why.** Same rule as §8.22–§8.25: a capability's incompatibility with
+Graph must be impossible to miss, at every layer — including when an
+author writes the wrong value on purpose, not just when they forget to
+write anything. And a failing tool call must look like a failure
+everywhere it's recorded — the trace event (§8.24), the span (§8.25), and
+now the KPI metric a dashboard or alert would actually query.
+
+### RFC reference
+
+`docs/swift/rfc/AGENT-CAPABILITY-RFC.md` §3.2, §3.9.
 
 ---
 

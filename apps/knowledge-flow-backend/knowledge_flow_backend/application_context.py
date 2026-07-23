@@ -62,7 +62,6 @@ from knowledge_flow_backend.common.structures import (
     OpenSearchVectorIndexConfig,
     PgVectorStorageConfig,
     TabularStoreConfig,
-    WeaviateVectorStorage,
 )
 from knowledge_flow_backend.core.processors.input.common.base_input_processor import BaseInputProcessor, BaseMarkdownProcessor, BaseTabularProcessor
 from knowledge_flow_backend.core.processors.input.fast_text_processor.base_fast_text_processor import BaseFastTextProcessor
@@ -97,9 +96,13 @@ BaseProcessorType = Union[BaseMarkdownProcessor, BaseTabularProcessor]
 DEFAULT_OUTPUT_PROCESSORS = {
     "markdown": "knowledge_flow_backend.core.processors.output.vectorization_processor.vectorization_processor.VectorizationProcessor",
     "tabular": "knowledge_flow_backend.core.processors.output.tabular_processor.tabular_processor.TabularProcessor",
+    "spreadsheet": "knowledge_flow_backend.core.processors.output.excel_processor.excel_table_registration_processor.ExcelTableRegistrationProcessor",
 }
 
-# Mapping file extensions to categories
+# Mapping file extensions to categories.
+# "spreadsheet" documents produce a markdown preview (output.md) plus N Parquet
+# tables: they are PREVIEW_READY like markdown files and SQL_INDEXED like
+# tabular files, but never vectorized.
 EXTENSION_CATEGORY = {
     ".pdf": "markdown",
     ".docx": "markdown",
@@ -107,9 +110,9 @@ EXTENSION_CATEGORY = {
     ".txt": "markdown",
     ".md": "markdown",
     ".csv": "tabular",
-    ".xlsx": "tabular",
-    ".xls": "tabular",
-    ".xlsm": "tabular",
+    ".xlsx": "spreadsheet",
+    ".xls": "spreadsheet",
+    ".xlsm": "spreadsheet",
     ".duckdb": "duckdb",
     ".jsonl": "markdown",
     # Image extensions - processed as markdown with metadata
@@ -317,6 +320,16 @@ class ApplicationContext:
             return isinstance(processor, BaseTabularProcessor)
         except ValueError:
             return False
+
+    def is_spreadsheet_file(self, file_name: str) -> bool:
+        """
+        Returns True if the file belongs to the "spreadsheet" category.
+        Spreadsheet documents keep the markdown preview flow (output.md) but
+        route their output stage to per-table Parquet registration
+        (SQL_INDEXED) instead of vectorization.
+        """
+        ext = Path(file_name).suffix.lower()
+        return EXTENSION_CATEGORY.get(ext) == "spreadsheet"
 
     def get_output_processor_instance(self, extension: str) -> BaseOutputProcessor:
         """
@@ -698,10 +711,6 @@ class ApplicationContext:
                 bulk_size=store.bulk_size,
             )
             return self._vector_store_instance
-        # elif isinstance(store, WeaviateVectorStorage):
-        #     if self._vector_store_instance is None:
-        #         self._vector_store_instance = WeaviateVectorStore(embedding_model, s.host, s.index_name)
-        #     return self._vector_store_instance
         elif isinstance(store, ChromaVectorStorageConfig):
             from knowledge_flow_backend.core.stores.vector.chromadb_vector_store import ChromaDBVectorStore
 
@@ -1086,11 +1095,6 @@ class ApplicationContext:
                 logger.info("     ↳ Verify Certs: %s", ch.verify)
                 logger.info("     ↳ Username: %s", ch.username)
                 self._log_sensitive("CLICKHOUSE_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD"))
-            elif isinstance(store, WeaviateVectorStorage):
-                _require_env("WEAVIATE_API_KEY")
-                logger.info(f"     ↳ Host: {store.host}")
-                logger.info(f"     ↳ Index Name: {store.index_name}")
-                self._log_sensitive("WEAVIATE_API_KEY", os.getenv("WEAVIATE_API_KEY"))
             elif vector_type == "in_memory":
                 logger.info("     ↳ In-memory vector store (no host/index)")
         except Exception:

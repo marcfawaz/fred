@@ -175,7 +175,10 @@ export type ListCheckpointThreadsPodV1AgentsCheckpointsGetApiArg = {
 export type GetCheckpointStorageStatsPodV1AgentsCheckpointsStatsGetApiResponse =
   /** status 200 Successful Response */ CheckpointStorageStats;
 export type GetCheckpointStorageStatsPodV1AgentsCheckpointsStatsGetApiArg = void;
-export type DeleteCheckpointThreadPodV1AgentsCheckpointsSessionIdDeleteApiResponse = unknown;
+export type DeleteCheckpointThreadPodV1AgentsCheckpointsSessionIdDeleteApiResponse =
+  /** status 200 Successful Response */ {
+    [key: string]: number;
+  };
 export type DeleteCheckpointThreadPodV1AgentsCheckpointsSessionIdDeleteApiArg = {
   sessionId: string;
 };
@@ -477,6 +480,8 @@ export type RuntimeErrorEvent = {
 };
 export type VectorSearchHit = {
   author?: string | null;
+  /** content (default, real ingested prose/data) or 'dataset_pointer' (a discovery pointer to a structured dataset, never citable as a source). */
+  chunk_kind?: string | null;
   citation_url?: string | null;
   confidential?: boolean | null;
   content: string;
@@ -613,6 +618,7 @@ export type ToolResultRuntimeEvent = {
   content?: string;
   is_error?: boolean;
   kind?: "tool_result";
+  latency_ms?: number | null;
   sequence?: number;
   sources?: VectorSearchHit[];
   tool_name?: string | null;
@@ -773,6 +779,8 @@ export type AssetSlot = {
   min_count?: number;
 };
 export type UiHints = {
+  /** Renders the field inside the form's collapsed 'Advanced settings' disclosure instead of the main section. Display-only. */
+  advanced?: boolean;
   group?: string | null;
   hide?: boolean;
   markdown?: boolean;
@@ -780,6 +788,10 @@ export type UiHints = {
   multiline?: boolean;
   placeholder?: string | null;
   textarea?: boolean;
+  /** Key of a sibling field in the same form: this field is only shown while that sibling's effective value (current input or its declared default) is truthy. Display-only — the value is kept, and backends must not rely on the field being hidden. */
+  visible_when?: string | null;
+  /** Names a frontend form widget to render this field instead of the type-derived default input. Resolved first against the owning capability plugin's `configWidgets` (custom widgets, AGENT-CAPABILITY-RFC §9 item 4, #1903), then against stock widgets — known stock ids: 'document_libraries' (library/document tree picker for an array of library tag ids). Unknown ids fall back to the default input, so older frontends degrade gracefully. */
+  widget?: string | null;
 };
 export type FieldSpec = {
   default?:
@@ -841,8 +853,10 @@ export type TeamScopePolicy = "default_on" | "admin_gated";
 export type CapabilityCatalogEntry = {
   assets?: AssetSlot[];
   config_fields?: FieldSpec[];
+  default_capability_ids?: string[];
   /** i18n key */
   description: string;
+  execution_models?: ("react" | "graph")[];
   /** Material Symbols name; see CapabilityManifest.icon */
   icon: string;
   id: string;

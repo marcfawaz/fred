@@ -1,3 +1,154 @@
+**v2.1.11** — 2026-07-22
+
+- **Summary**
+
+  Agents can now work directly with your document library: they browse the folders you
+  have access to, summarize any document or chat attachment on demand, and use those
+  summaries to search your corpus far more effectively. This release also adds two more
+  capabilities: documents the agent and you write together in a live side pane (with
+  Word/Markdown export), and PowerPoint templates filled straight from a conversation.
+
+- **Features**
+
+  - Writable Documents: the agent drafts a document in a side pane you can edit together — it sees your changes and revises in place, and you can export to Word or Markdown (#1905, #2027)
+  - PPT Filler: give an agent your PowerPoint template and it fills the slides from the conversation and your documents, with an in-chat preview and a built-in authoring guide (#1903, #2020)
+  - Agents can now browse your document library and summarize any document or chat attachment on demand, making corpus search far more effective (#1906, #2056)
+
+- **Security**
+
+  - Routine dependency updates: pyasn1 and setuptools (Python), fast-uri, immutable and svgo (frontend) (#2062, #2063)
+
+- **Bug Fixes**
+
+  - Clicking "Process" on a document now shows a live Processing status that flips to Ready/Failed on its own, instead of staying stale until a page reload (#2020)
+
+- **Deployment note**
+
+  Additive only — the new capabilities ship in the standard images and their database tables are created by the usual migration step on upgrade; the new `timeouts.summarize_read` knob is optional with a sensible default. Admins enable the new capabilities for their teams; no other operator action needed.
+
+**v2.1.10** — 2026-07-22
+
+- **Summary**
+
+  Defense-in-depth authorization hardening for agent tool execution: every tool call in a
+  ReAct turn is now individually re-authorized, and JWTs are rejected if their issued
+  lifetime exceeds one hour, independent of what the issuing IdP was configured to allow.
+
+- **Security**
+
+  - Every tool call in a ReAct turn is now individually re-authorized against the caller's team (`CAN_READ`), not just once at turn start — a denied or stale team membership now blocks the specific tool call instead of being silently trusted for the rest of a long-running turn (`fred-runtime` 3.3.7)
+  - JWTs are now rejected when their issued lifetime (`exp - iat`) exceeds one hour, regardless of what the issuing IdP was configured to grant — closes a gap where token lifetime was entirely delegated to IdP configuration with no application-side ceiling; Fred's own service-to-service tokens are short-lived and auto-refreshed, so this does not affect normal traffic (`fred-core` 3.4.7)
+
+**v2.1.9** — 2026-07-21
+
+- **Summary**
+
+  Bug-fix release: ReBAC/authz gap closures (personal-team tuples, agent-kind
+  capability id collisions, AuthorizationError 500s), evaluation-agent reachability
+  fixes, and several UX/chart papercuts.
+
+- **Bug Fixes**
+
+  - Personal teams now get a real, self-healing ReBAC tuple — closes 500s/wrong 403s across filesystem, corpus, tags, tasks, evaluations (AUTHZ-08, #2038)
+  - `AuthorizationError` now inherits from `PermissionError`, so a real ReBAC denial surfaces as 403 instead of an unhandled 500 (EVAL-03, #2042)
+  - Reserve a namespaced id range for `kind="agent"` capabilities so they can no longer collide with `kind="tool"` ids (CTRLP-14, #2031)
+  - Make the evaluation agent reachable from the frontend (#2037); forward the caller's bearer token to pod chat-controls evaluation, which was silently dropping all composer capability controls on auth-enabled deployments (#2030)
+  - Tabular (CSV/XLSX) documents now reach "Ready" status instead of showing "Raw" forever (#2041)
+  - Fix KPI preset endpoints 503ing due to an unhandled resilient KPI store wrapper (#2041)
+  - Fix evaluation telemetry polling and conversation erasure edge cases (#2041)
+  - UX pass: personal prompts no longer leak into team spaces, prompt categories trimmed to 7, library tree picker and capability-toggle fixes (#2032)
+  - Fix Helm chart schema rejecting valid pod-level keys (`resources`, `imagePullSecrets`, `extraVolumes`, …) and migration hooks (#2025)
+  - Fix worktree dev configs still binding a shared Prometheus metrics port (#2028)
+  - Finish agent audit fields: `updated_by` column and creator/editor name resolution in the UI (#1952)
+
+**v2.1.7** — 2026-07-20
+
+- **Summary**
+
+  Adds native Google Cloud Storage support for control-plane's team personalization assets (banner/logo images), and fixes GCS authentication on Trusted Partner Cloud / sovereign deployments such as S3NS.
+
+- **Features**
+
+  - Control-plane can now load team banner/logo assets from a native GCS bucket via Application Default Credentials / Workload Identity, in addition to the existing MinIO/S3-compatible and local filesystem backends (`content_storage.type: gcs`, control-plane-backend, fred-core, #2022)
+  - New `signing_service_account_email` config knob for control-plane's GCS content store — mints short-lived V4 signed URLs via IAM `signBlob` (keyless) so team banners/logos remain viewable in the browser, extending the signing mechanism already used for knowledge-flow's internal tabular Parquet reads (`docs/swift/rfc/GCS-TABULAR-SIGNED-URL-RFC.md` §6)
+
+- **Bug Fixes**
+
+  - Fix `UniverseMismatchError` ("The configured universe domain (googleapis.com) does not match the universe domain found in the credentials") on every native-GCS backend (control-plane's new content store, knowledge-flow's content store and file store, fred-core's virtual filesystem) when deployed on a Trusted Partner Cloud / sovereign GCP variant such as S3NS — the GCS client now derives its universe domain from the loaded ADC credentials instead of assuming the public `googleapis.com` default, so the same code works unmodified on public GCP and on S3NS (`fred-core` 3.4.6, `knowledge-flow-backend` 1.5.3, `control-plane-backend` 1.6.1)
+
+- **Deployment note**
+
+  No new required config for existing MinIO/local deployments — additive only. GCS deployments (including already-running knowledge-flow-on-S3NS instances) pick up the universe-domain fix automatically on upgrade, no config change needed. Control-plane's new `gcs` backend needs `storage.content_storage.signing_service_account_email` set (see `deploy/charts/fred/values-gcp.yaml`) — the signing service account needs `storage.objects.get` on the control-plane `-objects` bucket, and the Workload Identity service account needs `iam.serviceAccounts.signBlob` on it (may reuse the same signing account already configured for knowledge-flow's tabular reads).
+
+**v2.1.6** — 2026-07-20
+
+- **Summary**
+
+  First release with production ready agent evaluation framework.
+
+- **Features**
+
+  - One-click "Rerun" on the evaluation runs list, reusing the most recent run's target — the daily re-run workflow is a single click instead of a target picker every time (falls back to "New run…" when there's nothing rerunnable yet)
+  - New shared `Breadcrumb` navigation component (Evaluations list → one Evaluation's runs → one Run's cases), replacing the duplicate back-button pattern on each page
+
+- **Improvements**
+
+  - Evaluation run/case progress now polls the run data directly instead of depending on the shared task-activity SSE stream, which opens one long-lived connection per active task per browser tab and can exhaust the browser's shared per-origin connection limit across two open tabs
+  - Run and case progress queries no longer poll out of lockstep: the cases table forces one final refresh exactly when a run reaches a terminal state, closing a race where the run showed "Done" while a case row stayed stuck on "Running"
+  - The "Scores by metric" panel is now labelled as a partial, still-updating average while a run is live, instead of reading as the final score under the same "Global score" label
+  - Evaluation creation now returns to the full evaluations list instead of jumping straight into the new evaluation's (empty) run list, keeping "starting a run" a deliberate next step
+  - Evaluation empty states (list and per-evaluation runs) now use the same sober `ServiceNotice` component already used elsewhere for "no X available" messaging, instead of a large standalone icon with its own redundant call-to-action button
+  - The evaluation run detail page's Langfuse action no longer renders as a permanently-disabled "offline" button when telemetry is enabled in config but was never actually reachable — only shown when a session is available or genuinely still pending
+  - `GET /teams/{team_id}/candidate-members` (new, team-scoped): a team admin can now search for a user to add to their team without requiring platform-admin rights, which the existing org-wide `/users` listing required
+
+- **Bug Fixes**
+
+  - Fix the evaluation worker's service-account identity being denied on every run case (`prepare-execution` requires `CAN_USE_TEAM_AGENTS`, which the service-agent allowlist never carried) — every evaluation run was blocked from executing (fred-core 3.4.5)
+  - Fix the evaluation worker's service-account identity being denied on `get_tabular_dataset_schema` — the same service-agent ReBAC bypass already used for document/tag access was never applied to tabular datasets, 403'ing every evaluation case touching a team's tabular corpus (`knowledge-flow-backend`, #2018)
+  - Fix evaluation run rows never reaching a terminal state on a full workflow failure, and never showing incremental per-case progress while running — both left the runs list stuck at "Pending 0/N" (`fred-evaluation-backend`)
+  - Fix a case-drawer table column overflow where a long judge-profile label could clip the Detail/Delete action buttons
+  - Fix a team admin's "add member" search silently returning nothing (403 swallowed) because it called the platform-admin-only `/users` listing instead of a team-scoped endpoint
+
+**v2.1.5** — 2026-07-20
+
+- **Summary**
+
+  Closes the remaining CAPAB-01 agent-template capability gating gaps (`depends_on`
+  enforcement, suspend/revive symmetry, import-sweep idempotency), ships increment 1 of
+  tabular dataset discovery via semantic search, and lands a native in-app PDF viewer
+  alongside continued MUI-to-rework frontend migration. Includes a full independent
+  4-lens code review pass with fixes for every blocking/should-fix finding, several of
+  them deploy-relevant.
+
+- **Features**
+
+  - `depends_on` gate: enabling a `kind="agent"` capability for a team or personal space now rejects (409) when its default tool capabilities aren't yet usable, closing the live bug where an agent could be enabled with a still-disabled dependent tool (CTRLP-14, #2004, #2015)
+  - Dataset pointer chunks (increment 1): tabular/SQL datasets are now discoverable by a generalist agent via semantic search, gated off by default pending a deliberate rollout decision (RUNTIME-10, #2014)
+  - Native PDF rendering unified into a single `DocumentViewer`, shared by chat citations and the corpus workspace preview drawer — every PDF previously rendered as markdown-only text regardless of upload format (FRONT-13, #1956)
+  - SQL agent grounds generated queries in real, sampled column values instead of guessing string casing/format, removing a silent wrong-case "no data found" failure mode
+  - First deep-agent template exposed: `fred.github.deep_assistant` (blank-slate, plans before it acts, same enrollment model as the general assistant). No filesystem tool by default — operators add it explicitly once ready
+
+- **Improvements**
+
+  - Revoking a team's grant on an agent-template capability now suspends its dependent instances consistently, and re-granting it reliably revives them again — previously revival only matched tool-level selections, so a template-suspended instance could never come back (CAPAB-01, #2004)
+  - Import capability sweeps stay correctly scoped and idempotent across retried/duplicate import jobs
+  - Checkpoint erasure now reports a real deleted-row count instead of always `None`, matching its sibling history-erasure endpoint (fred-runtime 3.3.5)
+  - ReAct thought events now carry a real `duration_ms` instead of always `None`
+  - DeepAgent (the minimal multi-step planning runtime) now emits the same audit/KPI/log trail as every other agent, closing a gap that predated any Deep agent being exposed
+  - Removed dead frontend code: the unused `monitoringApi` slice, the kubernetes/statistics endpoints and Helm flag, and five npm dependencies with zero import sites
+  - Continued MUI → rework migration: `Protected` guard, `ConfirmationDialogProvider`, `PageError`/`PageUnauthorized`, `LibraryTreePlayground`, and `PdfStreamingDocumentViewer` ported off MUI
+  - Removed the unused Weaviate vector-store backend (not selected by any checked-in config)
+  - Routine dependency bump: langchain 1.3.10→1.3.14, langgraph 1.2.5→1.2.9, deepagents 0.6.10→0.6.12
+
+- **Bug Fixes**
+
+  - Fix in-memory and Chroma vector stores not upserting by `chunk_uid` — re-ingesting a dataset appended a duplicate pointer chunk or silently dropped the update instead of overwriting it
+  - Fix dataset pointer chunks being invisible to search (never marked retrievable) and orphaned on deletion (never marked vectorized)
+  - Exclude dataset-pointer and low-relevance chunks from the chat Sources panel — a discovery-pivot chunk or near-zero-relevance hit was previously cited as if it were the answer's real source
+  - Fix checkpoint/history erasure crashing the whole erase-session fan-out on a non-JSON or empty 2xx response, instead of isolating the single store failure
+  - Fix a `DocumentViewer` race where switching documents mid-fetch let a stale response overwrite the newer document's content and title
+  - Revert a live-testing config leftover that had left dataset pointer chunks enabled by default in 7 checked-in config/Helm files, including the GCP values file — now correctly gated off pending a deliberate rollout decision
+
 **v2.1.4** — 2026-07-19
 
 - **Summary**

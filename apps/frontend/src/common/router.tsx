@@ -24,6 +24,7 @@ import GcuPage from "@components/pages/GcuPage/GcuPage.tsx";
 import GdprPage from "@components/pages/GdprPage/GdprPage.tsx";
 import ManagedChatPage from "@components/pages/ManagedChatPage/ManagedChatPage.tsx";
 import MarketplaceTeams from "@components/pages/marketplace/MarketplaceTeams/MarketplaceTeams.tsx";
+import PptFillerHelpPage from "@components/pages/PptFillerHelpPage/PptFillerHelpPage.tsx";
 import PromptsPage from "@components/pages/PromptsPage/PromptsPage.tsx";
 import TeamResourcesPage from "@components/pages/TeamResourcesPage/TeamResourcesPage.tsx";
 import TeamSettingsPage from "@components/pages/TeamSettingsPage/TeamSettingsPage.tsx";
@@ -38,12 +39,12 @@ import React, { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate, RouteObject, useParams } from "react-router-dom";
 import LoadingWithProgress from "../components/LoadingWithProgress";
 import RendererPlayground from "../components/markdown/RenderedPlayground";
-import { Protected } from "../components/Protected";
+import { Protected } from "@core/guards/Protected";
 import { useFrontendBootstrap } from "../hooks/useFrontendBootstrap.ts";
 import { ComingSoon } from "../pages/ComingSoon.tsx";
 import { McpHub } from "../pages/McpHub";
-import { PageError } from "../pages/PageError";
-import Unauthorized from "../pages/PageUnauthorized";
+import { PageError } from "@components/pages/PageError/PageError.tsx";
+import Unauthorized from "@components/pages/PageUnauthorized/PageUnauthorized.tsx";
 import { FeatureFlagKey, getConfig, isFeatureEnabled } from "./config";
 
 const basename = getConfig().frontend_basename;
@@ -85,7 +86,7 @@ const Runtime = lazy(() => import("../pages/Runtime"));
 const DataHub = lazy(() => import("../pages/DataHub"));
 const RebacBackfill = lazy(() => import("../pages/RebacBackfill"));
 const TaskPlayground = lazy(() => import("../pages/TaskPlayground"));
-const LibraryTreePlayground = lazy(() => import("../pages/LibraryTreePlayground"));
+const LibraryTreePlayground = lazy(() => import("@components/pages/LibraryTreePlayground/LibraryTreePlayground.tsx"));
 const ProcessorBench = lazy(() => import("../pages/ProcessorBench"));
 const ProcessorRunDetail = lazy(() => import("../pages/ProcessorRunDetail"));
 
@@ -327,6 +328,12 @@ export const routes: RouteObject[] = [
   {
     path: "/release-notes",
     element: <ReleaseNotesPage />,
+  },
+  {
+    // PPT Filler capability documentation — opened in a new tab from the
+    // agent-creation form, so it renders without the app chrome.
+    path: "/ppt-filler-help",
+    element: <PptFillerHelpPage />,
   },
   {
     path: "/settings",

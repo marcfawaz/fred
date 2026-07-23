@@ -232,12 +232,6 @@ class InMemoryVectorStorage(BaseModel):
     type: Literal["in_memory"]
 
 
-class WeaviateVectorStorage(BaseModel):
-    type: Literal["weaviate"]
-    host: str = Field(default="https://localhost:8080", description="Weaviate host")
-    index_name: str = Field(default="CodeDocuments", description="Weaviate class (collection) name")
-
-
 class OpenSearchVectorIndexConfig(BaseModel):
     type: Literal["opensearch"]
     index: str = Field(..., description="OpenSearch index name")
@@ -286,7 +280,6 @@ VectorStorageConfig = Annotated[
         InMemoryVectorStorage,
         OpenSearchVectorIndexConfig,
         ChromaVectorStorageConfig,
-        WeaviateVectorStorage,
         PgVectorStorageConfig,
         ClickHouseVectorStorageConfig,
     ],
@@ -325,6 +318,13 @@ class ProcessingConfig(BaseModel):
         do_ocr: bool = Field(
             default=False,
             description="Enable PaddleOCR post-processing on extracted images when using the docling extractor.",
+        )
+        docling_num_threads: int = Field(
+            default=4,
+            ge=1,
+            description="OMP/accelerator threads docling uses per PDF extraction. Tune down when "
+            "scheduler.temporal.ingestion_max_concurrent_activities x this value exceeds the "
+            "CPU cores available to the worker (host or pod), or extractions will thrash instead of progressing.",
         )
 
     class ProfileInputProcessorConfig(BaseModel):
@@ -534,9 +534,9 @@ class ProcessingConfig(BaseModel):
     def normalize_profile(self, profile: IngestionProcessingProfile | str | None) -> IngestionProcessingProfile:
         if profile is None:
             return self.default_profile
-        if isinstance(profile, str):
-            return IngestionProcessingProfile(profile)
-        return profile
+        # IngestionProcessingProfile is itself a str subclass, so this also covers
+        # (and is idempotent for) an already-valid enum member.
+        return IngestionProcessingProfile(profile)
 
     def get_profile_config(self, profile: IngestionProcessingProfile | str | None) -> "ProcessingConfig.ProfileConfig":
         profile = self.normalize_profile(profile)
@@ -572,10 +572,6 @@ class MCPConfig(BaseModel):
     tabular_enabled: bool = Field(
         default=True,
         description="Expose the Tabular MCP server for SQL/table exploration.",
-    )
-    statistic_enabled: bool = Field(
-        default=True,
-        description="Expose the Statistical MCP server for data analysis helpers.",
     )
     text_enabled: bool = Field(
         default=True,
@@ -915,6 +911,15 @@ class TabularStoreConfig(BaseModel):
     compression: str = Field(
         default="snappy",
         description="Parquet compression codec used when persisting tabular artifacts.",
+    )
+    pointer_chunks_enabled: bool = Field(
+        default=False,
+        description=(
+            "Emit one synthetic 'dataset pointer' chunk per tabular dataset into the shared "
+            "vector index, so semantic search can discover a dataset exists and route agents "
+            "to the SQL/tabular tool (RAG-DATASET-DISCOVERY-RFC.md). Off by default for "
+            "measured, gradual activation."
+        ),
     )
     query: TabularQueryConfig = Field(
         default_factory=TabularQueryConfig,

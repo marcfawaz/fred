@@ -503,6 +503,101 @@ items:
       lint/render clean; remaining Step 6 chart gate (migration disabled by
       default) still open.
 
+  - id: AUTHZ-08
+    title: "Personal-team ReBAC gap: real self-provisioned tuple, write-guarded"
+    status: done
+    owner: Dimitri
+    parent: AUTHZ-05
+    refs:
+      rfc: "docs/swift/rfc/PERSONAL-TEAM-ISOLATION-RFC.md (retired 2026-07-21, historical only)"
+      design: "docs/swift/platform/REBAC.md §Personal teams, docs/swift/design/RUNTIME-EXECUTION-CONTRACT.md §2.2/§8.19/§8.20"
+      issue: "https://github.com/ThalesGroup/fred/issues/2034"
+    notes: >
+      Found live 2026-07-20: personal teams (`personal-<uid>`) had zero
+      OpenFGA tuples of any kind, confirmed by directly querying the store.
+      Root cause traced to AUTHZ-05 item 8b (2026-07-13): removing the
+      Keycloak-groups-derived contextual-relation fallback incidentally also
+      removed the only thing that had ever made a personal space's `CAN_READ`
+      check pass (a non-persisted, non-Keycloak contextual `team_member`
+      relation the same helper injected). The item 8b fix that shipped
+      (`agent_app.py::_authorize_execution_or_raise`, exact-identity-match
+      guard, no OpenFGA call) was applied to exactly one call site and never
+      generalized. Sweep of every other real ReBAC team-permission check
+      confirmed the same root cause reachable elsewhere: knowledge-flow-
+      backend's filesystem routes crashed 500 (local exception handling
+      swallowed `AuthorizationError` into a generic 500 before the app's
+      registered 403 handler ever ran); corpus_manager_controller.py,
+      tag_service.py's canonical-id path, openai_compat_router.py,
+      fred-core's `tasks/authz.py::list_tasks_scoped`, and all 5
+      evaluations/api.py endpoints wrongly 403'd the space's own owner.
+      Considered and rejected: generalizing the identity-only guard (matches
+      AUTHZ-05 item 8b's original intent, but structurally cannot support
+      `ListObjects`/enumeration — `lookup_user_resources` would still omit a
+      user's own personal team from any "list my teams" surface — and
+      requires re-threading the same special case into every future caller,
+      the exact whack-a-mole shape PERSONAL-TEAM-ISOLATION-RFC.md §3 already
+      rejected once for a different problem). Shipped instead: personal teams
+      are real ReBAC team objects. `RebacEngine.check_user_permission_or_raise`
+      /`has_user_permission` (fred-core, shared by every backend) self-heal
+      exactly one tuple — `user:<uid> team_editor team:personal-<uid>` — on
+      the owner's first touch (idempotent via `has_direct_relation`, so no
+      re-write or audit-log spam on repeat checks); `team_editor` was chosen
+      because it exactly reproduces `build_personal_team`'s hardcoded
+      permission set. `RebacEngine.add_relation` — the one audited write
+      chokepoint every relation write already funneled through — now refuses
+      any tuple naming a personal team except that owner self-grant and the
+      structural `organization -> team` edge, so no admin API, import/export
+      path, or future caller can write a tuple granting anyone access to
+      someone else's personal space; this is what makes a real, persisted
+      tuple safe here (closes the residual risk a plain identity-only guard
+      was originally chosen to avoid — checked live: `teams/service.py`'s
+      `grant_team_member_role` had no such guard before this, so the "no
+      tuple" design was protected by accident, not by policy, prior to this
+      fix). `agent_app.py`'s local identity-only branch deleted — the plain
+      `check_user_team_permission_or_raise` call now handles personal spaces
+      correctly with no special-casing, same as every other caller.
+      Independent, secondary fix bundled in the same pass: knowledge-flow-
+      backend's `mcp_fs_controller._handle_exception` now maps
+      `AuthorizationError` to 403 explicitly (previously fell through to the
+      generic 500 branch), and `mcp_fs_service.py`'s 9 call sites no longer
+      double-log an ERROR-level traceback for an expected, routine denial
+      (ReBAC already logs one bounded WARNING at the point of denial; the
+      audit trail already carries the structured record). Verified offline:
+      fred-core 297 passed (9 new tests: self-heal provisions/is idempotent/
+      never provisions another user's space, add_relation write-guard allows
+      the two sanctioned shapes and rejects everything else), fred-runtime
+      556 passed (3 personal-space tests in test_agent_app.py rewritten to
+      prove agent_app.py no longer special-cases the outcome), knowledge-
+      flow-backend 382 passed (2 new tests: `AuthorizationError` → 403,
+      no ERROR-level log on denial); `make code-quality` clean on all three.
+      No live integration test run (standing repo convention) — OpenFGA
+      write idempotency (`on_duplicate_writes=IGNORE`) verified by reading
+      `openfga_engine.py`, not by exercising a live store.
+
+      Follow-up closed 2026-07-21: independent design review found self-heal
+      was wired into the permission-*check* methods only —
+      `RebacEngine.lookup_user_resources` (enumeration, e.g. "list my teams"
+      / the `/fs` virtual `/teams` directory) went straight to OpenFGA
+      `ListObjects` with no self-heal, so a first-touch user whose first
+      ReBAC-touching call was an enumeration (not a check on a known team id)
+      got an empty result — contradicting this entry's own claim that a real
+      tuple "makes `ListObjects`/enumeration work correctly for personal
+      spaces." Fixed: `lookup_user_resources` now self-heals the caller's own
+      personal-team tuple before delegating to `lookup_resources`, same
+      mechanism, no new write path. 3 new fred-core tests (self-heals on
+      first enumeration, idempotent, scoped to `Resource.TEAM` only — a
+      non-team enumeration like "list my agents" must not trigger it).
+      fred-core 300 passed, knowledge-flow-backend 78 passed (targeted),
+      control-plane-backend 149 passed (`-k team`); `make code-quality` clean
+      on fred-core. Docs consolidated out of RFC into permanent design docs
+      per standing policy (fewer RFCs, more finished docs): `REBAC.md` §
+      "Personal teams" is now the canonical mechanism description;
+      `RUNTIME-EXECUTION-CONTRACT.md` §2.2 points to it instead of
+      duplicating it; `CONTROL-PLANE-PRODUCT-CONTRACT.md` §21 adds the
+      isolation-rule note originally promised (but never delivered) by the
+      RFC; `PERSONAL-TEAM-ISOLATION-RFC.md` is retired to a short historical
+      stub — do not amend it further, amend the docs above instead.
+
   # ── FILES ─────────────────────────────────────────────────────────────
 
   - id: FILES-01
@@ -625,6 +720,91 @@ items:
 
   # ── CAPAB ─────────────────────────────────────────────────────────────
 
+  - id: CAPAB-02
+    title: "AgentCapability.tools() — Graph agents can use capabilities"
+    status: done
+    owner: Dimitri
+    refs:
+      rfc: "docs/swift/rfc/AGENT-CAPABILITY-RFC.md §3.2, §3.9, §5.1"
+      execution: "GitHub issue: pending creation (drafted 2026-07-23)"
+    notes: >
+      Retroactively registered (2026-07-23) — implemented 2026-07-22 across 6 phases
+      on branch `consolidation-22-07` before this ID existed. Closes the gap RFC §3.9
+      originally documented as "Execution is ReAct-only": `AgentCapability.tools()`
+      is now the primary, execution-model-agnostic runtime surface (`middleware()`
+      becomes the ReAct-only escape hatch, defaulting to a wrap of `tools()`); a
+      `GraphAgentDefinition` selecting a capability resolves and executes it exactly
+      like a ReAct agent does, through `CapabilityAgentBlock.tools` and
+      `GraphRuntime`'s `_adapt_capability_tool_for_graph` merge seam. `document_access`
+      and `demo.py` migrated onto `tools()`.
+      First correction (2026-07-23, independent review #1 — see
+      `RUNTIME-EXECUTION-CONTRACT.md` §8.23): the first landing let a Graph agent
+      silently SELECT a `middleware()`-only capability (`ppt_filler`/`writable_document`)
+      and get zero tools with no error. `CapabilityManifest.execution_models` now lets a
+      capability declare itself ReAct-only, enforced as a loud `CapabilityError` at
+      assembly. Also fixed: `document_access`'s tree/summarize artifacts carried no
+      payload (silently corrupted on Graph); `tools(ctx)` was called twice per assembly;
+      `demo.py`'s tool was sync.
+      Second correction (2026-07-23, independent review #2 — see §8.24): §8.23's
+      single-call fix made `tools()` and an overridden `middleware()` either/or instead
+      of composed, silently dropping a combining capability's plain tools under ReAct
+      (fixed). The capability catalog (`GET /agents/templates`) still offered
+      ReAct-only capabilities to Graph templates — now filtered per template. A
+      capability with an active `HitlSpec` selected on a Graph agent now fails loudly
+      (stopgap — `CapabilityAgentBlock.hitl` is still never consulted by `GraphRuntime`;
+      full Graph HITL support remains a deferred, real design task, not implemented).
+      `document_access`'s FAILURE-path artifacts also carried no payload (fixed);
+      `invoke_runtime_tool` hardcoded `is_error=False` on its trace event regardless of
+      the tool's real answer (fixed). The Graph adapter now refuses loudly rather than
+      silently break on a sync `content_and_artifact` tool, and its 2-tuple unwrap is
+      gated on the tool's declared `response_format` instead of firing for any 2-tuple.
+      `McpCapability`'s `agent_instructions` prompt fragment is confirmed ReAct-only —
+      documented as such, not fixed (no Graph-side prompt-injection mechanism exists).
+      `runtimeOpenApi.ts`/`controlPlaneOpenApi.ts` regenerated for the new
+      `execution_models` field.
+      Third correction (2026-07-23, independent review #3 — see §8.25): the loud
+      refusal only caught a capability that EXPLICITLY declared itself ReAct-only —
+      an author who simply never mentioned `execution_models` on a `middleware()`-only
+      capability kept the class default (both models), which still silently passed
+      every check and still shipped a Graph no-op. Fixed with a BOOT invariant, not a
+      runtime one: `CapabilityRegistry._validate_execution_models`
+      (`InvalidExecutionModelError`) uses pydantic `model_fields_set` to detect
+      "never declared" vs "explicitly declared the default" and fails pod startup for
+      the former (McpCapability exempt). `CapabilityManifest` also now requires
+      `"react"` always be present (no capability shape is Graph-only). Two pre-existing
+      test fixtures needed the same explicit declaration this invariant now demands.
+      Also fixed: `document_access`'s 403/404 recovery hint was appended to the message
+      AFTER the artifact was already built, so it reached ReAct but not the Graph-kept
+      artifact; `invoke_runtime_tool` read `is_error` off the normalized dict (risking a
+      false positive on an unrelated tool's own `is_error`-named field) and never
+      populated `sources`/`ui_parts` on its event — now reads the typed
+      `ToolInvocationResult` directly, only when genuinely one.
+      Fourth correction (2026-07-23, independent review #4 — see §8.26): round 3's boot
+      check only caught a capability that never MENTIONED `execution_models` — one that
+      explicitly wrote `execution_models=("react", "graph")` on a `middleware()`-only
+      shape still passed every check (boot, manifest validator, Graph assembly) while
+      still having zero `tools()` output, reproducing the exact silent no-op. Fixed:
+      `_validate_execution_models` (renamed `InvalidExecutionModelError`, was
+      `UndeclaredExecutionModelError`) now checks the VALUE — any `middleware()`-only
+      capability whose `execution_models` contains `"graph"` fails boot regardless of
+      whether that came from the default or an explicit declaration; `model_fields_set`
+      is now used only to make the error message precise. Also fixed:
+      `invoke_runtime_tool`'s KPI timer never captured `kpi_dims`, so a reported
+      `is_error=True` (no exception raised) still recorded `status=ok` in the metric —
+      now mirrors `invoke_tool`'s `kpi_dims["status"] = "error"` pattern.
+      Still open, explicitly not fixed: full HITL enforcement on the Graph path (a
+      real design task reconciling Graph's node-level pause/resume with the per-tool
+      gate); whether a capability's ReAct-only middleware contributions (prompt
+      fragments, dynamic schemas) should ever become expressible to Graph agents.
+      Also noted, unrelated to CAPAB-02, not fixed here: `RUNTIME-EXECUTION-CONTRACT.md`
+      has pre-existing duplicate §8.x numbers (§8.13, §8.16, §8.21 each appear twice)
+      predating this work — a doc-hygiene issue across many past contributors, flagged
+      rather than silently renumbered in a change this large already.
+      See `docs/swift/design/RUNTIME-EXECUTION-CONTRACT.md` §8.22–§8.26 for the full
+      implementation record. Phase-by-phase design log of the original landing
+      (superseded by the RFC amendment as the canonical source):
+      `NOTES-GRAPH-CAPABILITY-BRIDGE.md` at the branch root.
+
   - id: CAPAB-01
     title: "Agent capability team-scoping — ReBAC gating, enablement, selection"
     status: in_progress
@@ -737,13 +917,12 @@ items:
       backlog: "docs/swift/backlog/CHAT-UI-BACKLOG.md §9"
       rfc: "docs/swift/rfc/RAG-AGENT-QUALITY-RFC.md"
     notes: >
-      Companion to RUNTIME-06. Registers the /documents/:uid route using the existing
-      MarkdownDocumentViewer component. Adds "Open document" link to SourceDetailModal.
-      Rendering-spec detail lives in CHAT-RENDERING-SPEC.md and the RFC — not repeated
-      here. Manual end-to-end verification pending live pod (one unchecked item in
-      CHAT-UI-BACKLOG.md §9.5); status kept "draft" until that's confirmed. Native PDF
-      rendering and an assistant panel deferred to FRONT-13
-      (docs/swift/rfc/DOCUMENT-VIEWER-AI-PANEL-RFC.md).
+      Companion to RUNTIME-06. Registers the /documents/:uid route (now rendering via
+      the shared DocumentViewer component, see FRONT-13). Adds "Open document" link to
+      SourceDetailModal. Rendering-spec detail lives in CHAT-RENDERING-SPEC.md and the
+      RFC — not repeated here. Manual end-to-end verification pending live pod (one
+      unchecked item in CHAT-UI-BACKLOG.md §9.5); status kept "draft" until that's
+      confirmed.
 
   - id: CHAT-09
     title: "Streaming render guard — suppress transient block-renderer errors during delta streaming"
@@ -850,6 +1029,52 @@ items:
       EffectiveChatOptions.attach_files already exists.
       Implemented 2026-06-29; offline suites green (cp 175 / agents 33 / frontend 276),
       all code-quality green. Awaiting review.
+
+  - id: CHAT-16
+    title: "Restore tool-call detail in the chain-of-thought trace and drawer (SQL, RAG sources, latency)"
+    status: done
+    owner: Dimitri
+    closed: "2026-07-22"
+    refs:
+      backlog: "docs/swift/backlog/CHAT-UI-BACKLOG.md §17"
+      rfc: "docs/swift/rfc/AGENT-THINKING-API-RFC.md Amendment B"
+      execution: "GitHub issue #1774"
+    notes: >
+      Follow-up to CHAT-14's redaction fix, which overcorrected by discarding
+      all tool-result detail (raw content already carried the SQL query and
+      RAG hits). `ToolResultRuntimeEvent`/`ToolResultPart` gain `latency_ms`
+      (additive; populated from the same elapsed-time computation already
+      used to close the paired `tool_use` thought — see
+      RUNTIME-EXECUTION-CONTRACT.md §8.21), threaded through `agent_app.py`
+      persistence, `useChatSse.ts`, and the OpenAPI-generated runtime client.
+      `traceUtils.groupTraceEntries()` stops emitting the synthetic
+      `tool_use`-phase thought row (title "Calling `<tool>`", conclusion
+      always the hardcoded literal "Done"/"Error") — redundant with the
+      paired combo row, which now also shows real latency; the repeated
+      "Done" spam is gone. `TraceDetailDrawer` now recognizes two curated
+      tool-result content shapes and renders them richly instead of the
+      blanket `{action, status, latency}` redaction: SQL
+      (`{sql_query, rows, error}`) via `CodeBlock` + row preview, and RAG
+      (`{query, hits}`) via the existing `SourcesPanel` molecule. Any other
+      tool shape still falls back to the original redacted view — the
+      CHAT-14 security posture is preserved as the default, only these two
+      specifically useful shapes are exempted. Removed the now-fully-dead
+      `summarizeToolResultCompact` (flagged as a follow-up in CHAT-14's
+      notes). New tests in `traceUtils.test.ts`
+      (shape-detection + tool_use filtering). Offline suites green
+      (fred-sdk 233, fred-runtime 565, frontend 503), all code-quality green.
+
+      **Amendment (2026-07-22).** Manual UI testing found the Monaco JSON
+      pane heavy (forced `vs-dark`, editor chrome, imposed fixed heights) for
+      a 3-line payload, with a scattered copy button per view. `InlineDrawer`
+      gained a `headerActions` slot (next to the close button) hosting a
+      single copy action — SQL query text for the SQL view, curated JSON for
+      the generic fallback, nothing for RAG (sources are browsed via
+      `SourcesPanel`). The generic fallback and the SQL row preview now
+      render through `CodeBlock` instead of `MonacoPane`. `MonacoPane` is no
+      longer referenced anywhere in the frontend — the atom and its
+      `@monaco-editor/react`/`monaco-editor` dependencies were removed
+      entirely (`npm install` regenerated `package-lock.json`).
 
   # ── CTRLP ─────────────────────────────────────────────────────────────
 
@@ -960,7 +1185,8 @@ items:
     closed: "2026-07-15"
     refs:
       backlog: "docs/swift/backlog/BACKLOG.md §6.4.F"
-      rfc: "docs/swift/rfc/PERSONAL-TEAM-ISOLATION-RFC.md"
+      rfc: "docs/swift/rfc/PERSONAL-TEAM-ISOLATION-RFC.md (retired 2026-07-21, historical only)"
+      design: "docs/swift/platform/REBAC.md §Personal teams, docs/swift/design/CONTROL-PLANE-PRODUCT-CONTRACT.md §21"
     notes: >
       Core isolation shipped: personal team derived from user uid
       (`personal-{uid}`), ReBAC membership aligned, runtime checkpoint/session
@@ -1044,6 +1270,42 @@ items:
       stays a manual admin decision via the new UI, made after this ships. Deferred:
       `depends_on` capability-dependency declarations + refuse-and-signal UX when
       enabling an agent without its tool dependencies granted.
+      2026-07-19: the deferred `depends_on` fast-follow, plus three backend
+      robustness gaps found reviewing this work (revoke-doesn't-suspend,
+      migration idempotency, import bypass), closed together under GitHub
+      #2004, merged via #2015 on `swift`. See `AGENT-CAPABILITY-RFC.md` §8.6's
+      2026-07-19 dated entry for the design.
+      2026-07-20: #2004 item 4 (kind="tool"/kind="agent" catalog-id namespace
+      collision) closed on the follow-up branch
+      `2004-capab-01ctrlp-14-follow-up-...` — `agent__` reserved id prefix +
+      admission-time rejection + one-time tuple-rename migration. See
+      `AGENT-CAPABILITY-RFC.md` §8.6's 2026-07-20 dated entry. All five #2004
+      items now resolved; issue closes with this branch's PR.
+
+  - id: CTRLP-15
+    title: "Control-plane content store: native GCS backend for team banner/logo assets"
+    status: in_progress
+    owner: Dimitri
+    parent: FILES-06
+    refs:
+      rfc: "docs/swift/rfc/GCS-TABULAR-SIGNED-URL-RFC.md §6"
+      execution: "GitHub issue #2022; branch 2022-make-control-plane-use-gcs-for-loading-its-initial-assets"
+    notes: >
+      Adds a `gcs` variant to control-plane's `storage.content_storage`
+      (`GcsContentStorageConfig`), backed by a new `fred_core.store.GcsContentStore`
+      (put_object + get_presigned_url). Unlike knowledge-flow's GCS content store,
+      whose browser-facing `get_presigned_url` stays unsupported in favor of
+      application-level HMAC tokens (FILES-06 / GCS-TABULAR-SIGNED-URL-RFC §2),
+      the control-plane has no such token flow for team banner/logo images —
+      `TeamService` hands the presigned URL straight to the frontend `<img>`. So
+      this store's `get_presigned_url` mints a real short-lived V4 signed URL via
+      IAM signBlob under Workload Identity (no JSON key), same mechanism as
+      knowledge-flow's internal tabular signing, formalized in
+      GCS-TABULAR-SIGNED-URL-RFC §6 (amendment 2026-07-20). Config requires
+      `signing_service_account_email`; startup fails fast if omitted while
+      `type: gcs` is set. MinIO/S3-compatible and local content stores are
+      unaffected. `deploy/charts/fred/values-gcp.yaml` gained a matching
+      `control-plane-backend` GCS example block.
 
   # ── EVAL ──────────────────────────────────────────────────────────────
 
@@ -1078,7 +1340,41 @@ items:
     refs:
       rfc: "fred-agent-evaluator/docs/rfc/EVAL-AUTH-RFC.md"
       backlog: "docs/swift/backlog/AGENT-EVALUATION-BACKLOG.md"
-    notes: "Solution A: runtime + control-plane + knowledge-flow recognize service_agent for team can_read only (read-only, no OpenFGA tuple), scoped to the request team_id. knowledge-flow enforcement in TagService.resolve_authorized_tag_ids_in_rebac authorizes the team's corpus tags so RAG evaluations retrieve the team corpus (fred PR #1923). Branch 1890. Identity provisioned in fred-deployment-factory (client fred-evaluation-worker). Reusable service-account pattern for async agent workers — see RFC EVAL-AUTH §11. Deploy-time invariant: grant service_agent role only to trusted M2M clients."
+    notes: >
+      Solution A: runtime + control-plane + knowledge-flow recognize service_agent for team
+      can_read only (read-only, no OpenFGA tuple), scoped to the request team_id.
+      knowledge-flow enforcement in TagService.resolve_authorized_tag_ids_in_rebac authorizes
+      the team's corpus tags so RAG evaluations retrieve the team corpus (fred PR #1923).
+      Branch 1890. Identity provisioned in fred-deployment-factory (client
+      fred-evaluation-worker). Reusable service-account pattern for async agent workers — see
+      RFC EVAL-AUTH §11. Deploy-time invariant: grant service_agent role only to trusted M2M
+      clients.
+
+
+      2026-07-21 follow-up (branch fix/eval-03-service-agent-single-resource-checkpoints): the
+      bulk resolver (resolve_authorized_tag_ids_in_rebac) was covered, but a real evaluation
+      run (warfare-tracks, team fredlab) showed the single-resource checkpoint
+      TagService.get_tag_for_user (used by the corpus-filesystem MCP tool and by
+      vector-search's explicit-tag resolution) had no service_agent bypass at all — it always
+      denied the service_agent (zero per-user ReBAC relations by design). Fixed by scoping the
+      bypass to the tag's own owner_id (reusing resolve_authorized_tag_ids_in_rebac against
+      that team) rather than trusting an externally supplied team_id — no signature/plumbing
+      change needed on any caller. Also fixed AuthorizationError (fred-core) to inherit from
+      PermissionError, since check_permission_or_raise raises AuthorizationError but several
+      controllers (e.g. tabular) only catch PermissionError before a generic 500 handler — a
+      denial was surfacing as an unhandled 500 instead of 403.
+
+
+      Known remaining gap (not fixed in this pass, needs its own RFC-level design): general
+      corpus-filesystem *discovery* (listing /corpus or /corpus/libraries without an
+      already-known tag_id) still returns empty for service_agent, because
+      CorpusVirtualFilesystem/mcp_fs_service.py have no team_id concept anywhere in their
+      contract (by design, for the interactive human-user case where ReBAC tuples alone scope
+      the listing). A service_agent has no ReBAC tuples, so there is currently no way to scope
+      that listing to one team without adding team_id as an explicit MCP tool parameter — a
+      public contract change, not a code fix. Same-class gap also identified in
+      MetadataService.get_document_metadata (untagged document reads via corpus browsing) —
+      also deferred pending the same team_id design decision.
 
   # ── FRONT ─────────────────────────────────────────────────────────────
 
@@ -1215,18 +1511,22 @@ items:
 
   - id: FRONT-13
     title: "Unified document viewer — native PDF rendering + AI assistant side panel"
-    status: draft
-    owner: TBD
+    status: in_progress
+    owner: Dimitri
     refs:
       rfc: "docs/swift/rfc/DOCUMENT-VIEWER-AI-PANEL-RFC.md"
       backlog: "docs/swift/backlog/FRONTEND-BACKLOG.md §19"
+      issue: "https://github.com/ThalesGroup/fred/issues/1956"
     notes: >
-      Consolidates the chat-citation (/documents/:uid, CHAT-08) and corpus-workspace
-      (FRONT-09) document preview flows into one DocumentViewer component. Restores
-      native PDF rendering (PdfStreamingDocumentViewer exists but is currently unwired
-      from both entry points — a UX regression from kea, tracked on GitHub issue #1956).
-      Adds an assistant side panel reusing the existing selected_document_uids
-      chat-scoping mechanism (no new backend endpoint). RFC-proposed, not started.
+      Consolidated the chat-citation (/documents/:uid, CHAT-08) and corpus-workspace
+      (FRONT-09) document preview flows into one DocumentViewer component (landed
+      2026-07-19). Restored native PDF rendering — the UX regression from kea tracked
+      on GitHub issue #1956 — closing that issue's Must-have checklist item. The
+      assistant side panel (reusing selected_document_uids for chat-scoping, no new
+      backend endpoint) is still open: ManagedChatPage requires an agentInstanceId and
+      there is no default/last-used agent concept today, so the panel needs an agent
+      picker — a product decision, not a technical unknown. Not scheduled for
+      swift-golive.
 
   # ── INGEST ────────────────────────────────────────────────────────────
 
@@ -1241,13 +1541,24 @@ items:
 
   - id: INGEST-02
     title: "Excel Extraction — Strategies and Deterministic Reconstruction Pipeline"
-    status: proposed
+    status: done
     owner: Timothé
     parent: INGEST-01
     refs:
       rfc: "docs/swift/rfc/EXCEL-EXTRACTION-PIPELINE-RFC.md"
       backlog: "docs/swift/backlog/BACKLOG.md §INGEST"
-    notes: "RFC authored 2026-06-26. Covers the three Excel extraction strategies and details the deterministic pipeline (phases A/B/C). Awaiting developer confirmation (Step 3)."
+      issue: "https://github.com/ThalesGroup/fred/issues/1927"
+      branch: "swift"
+    notes: >-
+      RFC authored 2026-06-26; strategy A (deterministic reconstruction) confirmed and
+      implemented end-to-end on branch swift. Input stage ExcelProcessor +
+      ExcelTableRegistrationProcessor output stage, new "spreadsheet" category (skips
+      vectorization), .xlsx/.xls/.xlsm wired across all config profiles. As-built pipeline
+      is A1–A5 / B1–B5 (not A1–A3 / B1–B9 / C): multi-level headers, unpivot and the LLM
+      fallback were deferred; numeric columns are recognised-not-converted; .xls handled via
+      LibreOffice recalc (closes open item 7.4). Divergences recorded in RFC §11. Issues:
+      input #1927/#1928, output stage #1929/#1930. Tests green (make code-quality && make
+      test). Awaiting review/merge.
 
   - id: INGEST-03
     title: "Legacy/OpenDocument Office support (.doc, .ppt, .odt) via LibreOffice upgrade"
@@ -1258,6 +1569,78 @@ items:
       backlog: "docs/swift/backlog/BACKLOG.md §INGEST"
       issue: "https://github.com/ThalesGroup/fred/issues/1878"
     notes: "Adds .doc/.ppt (legacy OLE binary) and .odt (OpenDocument) support by converting to .docx/.pptx with headless LibreOffice and reusing the existing DOCX/PPTX extractors across corpus ingestion, chat attachments (fast-text registry) and the lite markdown service. Reuses the established soffice pattern (pptx_slide_renderer); LibreOffice already shipped in both Dockerfiles. Extends INGEST-01 (EDP) — no new architecture."
+
+  - id: INGEST-04
+    title: "Tabular MCP: document-centric surface (CSV + Excel)"
+    status: in_progress
+    owner: Timothé
+    parent: INGEST-02
+    refs:
+      rfc: "docs/swift/rfc/EXCEL-EXTRACTION-PIPELINE-RFC.md"
+      backlog: "docs/swift/backlog/BACKLOG.md §INGEST"
+      branch: "swift"
+    notes: >-
+      RFC §10 amendment authored 2026-07-06; confirmed and implemented
+      2026-07-07 on branch swift — awaiting review. Replaces the dataset-centric
+      tabular routes with document-centric ones (dry removal): GET
+      /tabular/documents, GET /tabular/documents/schemas (batch, all tables per
+      document — fixes first-table-wins), GET /tabular/documents/{uid}/markdown
+      (spreadsheet output.md). POST /tabular/query unchanged. Stale mcp-tabular
+      mount description rewritten in main.py; frontend knowledgeFlowOpenApi.ts
+      regenerated. Offline suite: 17/17 tabular tests green (2 unrelated KPI
+      failures come from a local config/.env PROMETHEUS_BEARER_TOKEN leaking
+      into the full run). GitHub issue pending.
+
+      Extended 2026-07-20 (RFC §12): adds one read-only locator tool POST
+      /tabular/search (operation_id search_tabular_values) that locates a
+      keyword across the tables of the requested documents and returns, per
+      matching table, the matched columns and a bounded sample of matching
+      rows, so the agent issues one targeted read_query instead of
+      brute-forcing read_query table by table. Implemented 2026-07-20 on branch
+      1927-ingest-02-excel-tabular-extraction-pipeline; ships under this ID (no
+      separate ID or issue). Also added the missing authz-endpoint-matrix rows
+      for the whole document-centric tabular surface (the §10 routes had never
+      been registered). Normalized
+      substring match (lower, strip_accents, all whitespace removed, decimal
+      comma->point) over every column cast to VARCHAR (numeric columns
+      searchable); bounds max_rows_per_table=5 / max_matching_tables=30 with
+      row_truncated / tables_truncated signals. Additive on the knowledge-flow
+      OpenAPI surface; frontend knowledgeFlowOpenApi.ts regenerated;
+      mcp_catalog agent_instructions extended.
+
+  - id: INGEST-05
+    title: "Statistic feature: multi-table documents resolve to table 1 only"
+    status: proposed
+    owner: Timothé
+    parent: INGEST-02
+    refs:
+      backlog: "docs/swift/backlog/BACKLOG.md §INGEST"
+    notes: >-
+      Defect noted during INGEST-04 design (2026-07-06):
+      TabularService.read_dataset_frame / read_dataset_preview_frame resolve
+      multi-table documents with first-table-wins, so the Statistic MCP silently
+      analyses only table 1 of a workbook. Needs table-level addressing before
+      implementation.
+
+  - id: INGEST-06
+    title: "Tabular Artifact & DuckDB SQL-Mounting Contract"
+    status: done
+    owner: Timothé
+    parent: INGEST-01
+    refs:
+      rfc: "docs/swift/rfc/TABULAR-ARTIFACT-CONTRACT-RFC.md"
+      backlog: "docs/swift/backlog/BACKLOG.md §INGEST"
+      branch: "swift"
+    notes: >-
+      As-built RFC authored 2026-07-08 — documents the already-shipped tabular
+      contract that had no RFC home: the tabular_v1 (CSV single-table) and
+      tabular_multi_v1 (spreadsheet multi-table) metadata extensions, the
+      content-addressed object-store layout (artifacts_prefix/<uid>/<rev>/),
+      deterministic stored SQL aliases, the DTypes schema vocabulary, and the
+      read-only per-query DuckDB mounting model (document-level ReBAC, table-level
+      SQL exposure, signed-URL redaction). Producers: CSV path + INGEST-02
+      (Excel). Consumers: INGEST-04 (MCP surface), INGEST-05 (statistic). No new
+      code — documentation convergence only. Open item 9.1 == INGEST-05.
 
   # ── LICENSE ───────────────────────────────────────────────────────────
 
@@ -1510,6 +1893,23 @@ items:
       which conflicts with transformers>=5.4.0's huggingface_hub>=2.0 requirement (and
       5.0.x-5.3.x are excluded by docling-ibm-models itself). Closes 22/23 alerts; the last
       (transformers, high) stays open pending an upstream docling-ibm-models release.
+
+  - id: OPS-07
+    title: "LibreOffice availability for Excel recalc — soffice standardization + make run check"
+    status: in_progress
+    owner: Timothé
+    parent: INGEST-02
+    refs:
+      backlog: "docs/swift/backlog/BACKLOG.md §OPS-06"
+      execution: "waived GitHub issue for local session"
+    notes: >
+      Excel processor recalc (recalc_with_libreoffice) now invokes the soffice
+      binary with an isolated LibreOffice user profile, converging on the shared
+      legacy_office / pptx_slide_renderer pattern instead of the libreoffice
+      wrapper. make run gains a tools-check warning plus an opt-in
+      install-system-deps target so the missing host dependency is surfaced (the
+      Docker dev/prod/devcontainer images already ship LibreOffice). Mechanical
+      Makefile + code alignment — no RFC.
 
   - id: DEVOPS-FREDLAB
     title: "fredlab GCP — public Swift deployment with CI auto-deploy"
@@ -1911,6 +2311,24 @@ items:
       The source is explicit: conversation_attachment is scoped by session_id and
       ReBAC; document_media is scoped by document/corpus permissions. Presigned
       URLs and storage keys remain runtime-only implementation details.
+
+  - id: RUNTIME-10
+    title: "Dataset-pointer chunks for tabular datasets in the vector index (RAG discovery, increment 1)"
+    status: in_progress
+    owner: Dimitri
+    refs:
+      rfc: "docs/swift/rfc/RAG-DATASET-DISCOVERY-RFC.md"
+      issue: "https://github.com/ThalesGroup/fred/issues/2014"
+      execution: "GitHub issue #2014"
+    notes: >
+      A generalist agent holding both the tabular/SQL tool and document_access has no way
+      to discover a tabular dataset exists — TabularProcessor never touches the vector
+      index, and search_documents_using_vectorization's docstring dominates tool selection.
+      Increment 1: one deterministic pointer chunk per dataset (title+columns only, no
+      sample values), injection-resistant fixed template, additive chunk_kind field via
+      the existing safe-mapping-update mechanism, reuses existing delete-by-document_uid
+      lifecycle and upsert-by-chunk_uid, gated behind a new config flag for measured
+      activation. Backend only, zero impact on corpora without tabular datasets.
 
   - id: RUNTIME-09
     title: "Global base prompt (Mermaid output contract) — runtime suffix injection, not authoring-time bake"

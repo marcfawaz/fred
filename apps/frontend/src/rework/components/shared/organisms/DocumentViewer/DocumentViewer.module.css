@@ -1,0 +1,14 @@
+/* The markdown body spans the host's full width so wide tables (CSV/Excel
+   extracts) can use all available space. Running text keeps a comfortable
+   reading measure via the MarkdownRenderer `fullWidth` per-block cap, so only
+   tables and other wide blocks actually fill the width. */
+.markdownBody {
+  padding: var(--spacing-xl) var(--spacing-l);
+}
+
+.loading {
+  margin: var(--spacing-xl) auto;
+  color: var(--on-surface-retreat);
+  font: var(--font-body-medium);
+  text-align: center;
+}

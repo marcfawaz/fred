@@ -19,6 +19,7 @@ from control_plane_backend.teams.service import (
     list_scheduled_automation_delegations,
     revoke_scheduled_automation_delegation,
 )
+from control_plane_backend.users.schemas import UserSummary
 from fred_core import (
     KeycloakUser,
     RebacReference,
@@ -90,6 +91,9 @@ def _deps(
     async def _resolve_service_subject(_client_id: str) -> str | None:
         return service_subject
 
+    async def _search_users(_query: str) -> list[UserSummary]:
+        return []
+
     async def _append_audit(record) -> None:
         if audit_records is not None:
             audit_records.append(record)
@@ -98,7 +102,10 @@ def _deps(
         rows = []
         for index, record in enumerate(audit_records or []):
             created_at = datetime(2026, 7, 19, 8, index, tzinfo=timezone.utc)
-            if record.team_id != team_id or record.service_client_id != service_client_id:
+            if (
+                record.team_id != team_id
+                or record.service_client_id != service_client_id
+            ):
                 continue
             if action is not None and record.action != action:
                 continue
@@ -129,6 +136,7 @@ def _deps(
         get_purge_queue_store=lambda: None,  # type: ignore[return-value]
         get_policy_catalog=lambda: None,  # type: ignore[return-value]
         get_users_by_ids=lambda _ids: {},  # type: ignore[arg-type]
+        search_users=_search_users,
         run_lifecycle_manager_once_in_memory=lambda _input: None,  # type: ignore[arg-type]
         resolve_service_account_subject=_resolve_service_subject,
         append_scheduled_automation_audit=_append_audit,
@@ -141,7 +149,12 @@ def _admin() -> KeycloakUser:
 
 
 def _service_agent() -> KeycloakUser:
-    return KeycloakUser(uid="service-agent-sub", username="service-account-fred-ai-wiki-worker", email=None, roles=[SERVICE_AGENT_ROLE])
+    return KeycloakUser(
+        uid="service-agent-sub",
+        username="service-account-fred-ai-wiki-worker",
+        email=None,
+        roles=[SERVICE_AGENT_ROLE],
+    )
 
 
 @pytest.mark.asyncio
@@ -202,10 +215,21 @@ async def test_assign_list_and_revoke_scheduled_automation_delegation_is_idempot
         )
         == []
     )
-    assert [record.action for record in audit_records] == ["assign", "assign", "revoke", "revoke"]
-    assert {record.human_admin_subject for record in audit_records} == {"human-admin-sub"}
-    assert {record.service_client_id for record in audit_records} == {"fred-ai-wiki-worker"}
-    assert {record.service_subject for record in audit_records} == {"service-account-sub"}
+    assert [record.action for record in audit_records] == [
+        "assign",
+        "assign",
+        "revoke",
+        "revoke",
+    ]
+    assert {record.human_admin_subject for record in audit_records} == {
+        "human-admin-sub"
+    }
+    assert {record.service_client_id for record in audit_records} == {
+        "fred-ai-wiki-worker"
+    }
+    assert {record.service_subject for record in audit_records} == {
+        "service-account-sub"
+    }
     assert {record.team_id for record in audit_records} == {"fredlab"}
     assert {record.result for record in audit_records} == {"succeeded"}
 
@@ -275,7 +299,9 @@ async def test_scheduled_automation_delegation_requires_resolved_service_account
 
 
 @pytest.mark.asyncio
-async def test_scheduled_automation_service_identity_cannot_manage_delegations() -> None:
+async def test_scheduled_automation_service_identity_cannot_manage_delegations() -> (
+    None
+):
     request = ScheduledAutomationDelegationRequest(
         service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
@@ -292,7 +318,9 @@ async def test_scheduled_automation_service_identity_cannot_manage_delegations()
 
 
 @pytest.mark.asyncio
-async def test_scheduled_automation_delegation_audit_is_admin_filtered_and_sanitized() -> None:
+async def test_scheduled_automation_delegation_audit_is_admin_filtered_and_sanitized() -> (
+    None
+):
     rebac = _FakeRebac()
     audit_records = []
     deps = _deps(rebac, audit_records=audit_records)
@@ -300,8 +328,12 @@ async def test_scheduled_automation_delegation_audit_is_admin_filtered_and_sanit
         service_client_id="fred-ai-wiki-worker",
         relation=ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER,
     )
-    await assign_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, deps)
-    await revoke_scheduled_automation_delegation(_admin(), TeamId("fredlab"), request, deps)
+    await assign_scheduled_automation_delegation(
+        _admin(), TeamId("fredlab"), request, deps
+    )
+    await revoke_scheduled_automation_delegation(
+        _admin(), TeamId("fredlab"), request, deps
+    )
 
     rows = await list_scheduled_automation_delegation_audit(
         _admin(),
@@ -318,7 +350,10 @@ async def test_scheduled_automation_delegation_audit_is_admin_filtered_and_sanit
     assert rows[0].service_client_id == "fred-ai-wiki-worker"
     assert rows[0].service_subject == "service-account-sub"
     assert rows[0].team_id == "fredlab"
-    assert rows[0].relation == ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER
+    assert (
+        rows[0].relation
+        == ScheduledAutomationDelegationRelation.WIKI_REVIEW_ASSISTANT_RUNNER
+    )
     assert rows[0].result == "succeeded"
     assert rebac.permission_checks[-1] == (
         "fredlab",

@@ -132,7 +132,86 @@
     },
     "document_access": {
       "name": "Document access",
-      "description": "Search documents uploaded to Fred using semantic similarity (RAG)."
+      "description": "Search documents uploaded using semantic similarity (RAG)."
+    },
+    "writable_document": {
+      "name": "Writable document",
+      "description": "Write documents with the agent in a side-by-side Markdown editor, and export them to Word or Markdown.",
+      "panel": {
+        "writable_document_pane": {
+          "title": "Document"
+        }
+      },
+      "untitled": "Document",
+      "saving": "Saving…",
+      "close": "Close panel",
+      "download": "Download",
+      "downloadError": "Download failed",
+      "noSession": "No session — open a chat to see its documents.",
+      "empty": "No document yet. Ask the agent to draft one.",
+      "card": {
+        "aria": "Collaborative document",
+        "open": "Open",
+        "updatedByAgent": "Updated by the agent",
+        "updatedByUser": "Edited by you"
+      },
+      "format": {
+        "word": "Microsoft Word",
+        "markdown": "Markdown"
+      },
+      "code": {
+        "plainText": "Plain text"
+      }
+    },
+    "ppt_filler": {
+      "name": "PPT Filler",
+      "description": "Fill your own PowerPoint template from the conversation: the agent extracts the values and returns a finished deck.",
+      "form": {
+        "uploadTemplate": "Upload a .pptx template",
+        "replaceTemplate": "Replace the template",
+        "uploadAria": "PowerPoint template file",
+        "clearAria": "Remove the selected file",
+        "currentTemplate": "A template is configured for this agent.",
+        "templateRequired": "PPT Filler requires a PowerPoint template. Upload a .pptx file.",
+        "templateInvalid": "Fix the template errors below before saving.",
+        "analyzing": "Analyzing the template…",
+        "analyzeFailed": "The template could not be analyzed. Check the file and try again.",
+        "schemaTitle": "Fields the agent will fill",
+        "learnMore": "How does this work? What should I upload?",
+        "slide": "Slide {{number}}",
+        "imageBadge": "image · {{folder}}",
+        "noDescription": "No description"
+      },
+      "errors": {
+        "key_without_description": "{{placeholder}} appears on slide {{slide}} but has no description in the slide notes.",
+        "described_but_not_in_slide": "{{placeholder}} is described in the notes of slide {{slide}} but never appears in a text box on that slide.",
+        "unknown_metadata": "{{placeholder}} in the notes of slide {{slide}} declares an unknown metadata key (only 'type' and 'folder' are recognized).",
+        "unknown_type": "{{placeholder}} in the notes of slide {{slide}} declares an unknown type (only 'text' and 'image' are recognized).",
+        "duplicated_metadata": "{{placeholder}} in the notes of slide {{slide}} declares the same metadata key more than once.",
+        "image_without_folder": "{{placeholder}} in the notes of slide {{slide}} is an image but does not give a folder.",
+        "empty_folder": "{{placeholder}} in the notes of slide {{slide}} gives a folder but leaves it blank.",
+        "folder_without_image_type": "{{placeholder}} in the notes of slide {{slide}} gives a folder but is not an image (set 'type: image' to use a folder).",
+        "folder_not_found": "{{placeholder}} on slide {{slide}} points to a folder that does not exist in this space.",
+        "image_key_invalid_location": "{{placeholder}} on slide {{slide}} sits in a table cell, which cannot hold a picture. Move it into a text box or a rectangle.",
+        "invalid_upload": "The uploaded file could not be read as a .pptx. Re-select the file and try again.",
+        "asset_required": "PPT Filler requires a PowerPoint template, but none was provided."
+      },
+      "preview": {
+        "untitled": "Presentation",
+        "open": "Open preview",
+        "cardAria": "Presentation preview",
+        "download": "Download .pptx",
+        "downloadError": "Download failed",
+        "close": "Close preview",
+        "loadError": "Failed to load preview.",
+        "loading": "Loading preview…",
+        "empty": "No preview yet. Ask the assistant to fill a deck."
+      },
+      "panel": {
+        "ppt_preview_pane": {
+          "title": "Presentation preview"
+        }
+      }
     }
   },
   "chatbot": {
@@ -482,10 +561,6 @@
       "jira": {
         "description": "Allow your agent to interact with Jira",
         "name": "Jira access"
-      },
-      "kubernetes": {
-        "description": "Allow your agent to interact with Kubernetes clusters",
-        "name": "Kubernetes access"
       },
       "local_stdio": {
         "description": "Run a local MCP server over stdio (process-based tools)",
@@ -1062,10 +1137,15 @@
       "confirm": {
         "deleteMessage": "Remove \"{{name}}\" from this folder?",
         "deleteTitle": "Remove document",
+        "deleteFolderMessageEmpty": "Delete the empty folder \"{{name}}\"?",
+        "deleteFolderMessageWithDocs": "Delete \"{{name}}\" and its {{count}} document(s)? This cannot be undone.",
+        "deleteFolderTitle": "Delete folder",
         "shareMessage": "Copy \"{{name}}\" into the team space (Espace d'equipe)? The original stays where it is.",
         "shareTitle": "Copy to Team space"
       },
       "empty": {
+        "agentFiles": "This agent hasn't created any files for you yet. Files it generates for you will appear here.",
+        "agents": "No agent files yet. Files your agents create for you will appear here, grouped by agent.",
         "createLibrary": "Create a library (folder) to start adding documents.",
         "folder": "This folder is empty."
       },
@@ -1086,6 +1166,9 @@
         "title": "New folder"
       },
       "loading": "Loading resources...",
+      "preview": {
+        "title": "Document preview"
+      },
       "pagination": {
         "next": "Next page",
         "page": "page {{page}} / {{pageCount}}",
@@ -1099,6 +1182,8 @@
       },
       "title": "Resources",
       "toast": {
+        "deleteFolderError": "Could not delete the folder",
+        "deleteFolderSuccess": "Folder deleted",
         "processError": "Could not start processing",
         "processStarted": "Processing started"
       }
@@ -1119,7 +1204,7 @@
       },
       "evaluationService": {
         "title": "Evaluation service not running",
-        "description": "Start the fred-evaluation service to manage campaigns."
+        "description": "Start the fred-evaluation service to manage evaluations and runs."
       }
     },
     "sidebar": {
@@ -1392,7 +1477,9 @@
         "title": "Chat with your {{agentsNicknamePlural}}"
       },
       "formAgent": {
+        "advancedSettings": "Advanced settings",
         "createdBy": "Created by {{user}}",
+        "updatedBy": "Updated by {{user}}",
         "fields": {
           "description": {
             "label": "Description",
@@ -1475,67 +1562,13 @@
       "title": "Your profile"
     },
     "evaluation": {
-      "campaigns": {
-        "title": "Evaluations",
-        "description": "Agent validation campaigns",
-        "newCampaign": "+ New campaign",
-        "createCampaign": "Create a campaign",
-        "empty": "No evaluation campaigns yet",
-        "loadError": "Failed to load campaigns.",
-        "casesError": "Failed to load cases.",
-        "noCases": "No cases available.",
-        "drawerTitle": "Campaign cases",
-        "drawerHint": "Click a case to see full details",
-        "inputLabel": "Input",
-        "executionError": "Execution error",
-        "viewFullDetail": "View full detail →",
-        "metricsCount": "{{count}} metrics",
-        "targetInstance": "Instance · {{id}}",
-        "detail": "Detail",
-        "deleteTitle": "Delete campaign",
-        "deleteMessage": "Delete {{name}}? This permanently removes all cases, metrics and events for this campaign.",
-        "deleteSuccess": "Campaign deleted",
-        "deleteError": "Failed to delete campaign",
-        "kpi": {
-          "active": "Active campaigns",
-          "globalScore": "Average global score (%)",
-          "casesEvaluated": "Cases evaluated",
-          "criticalFailures": "Critical failures"
-        },
-        "col": {
-          "name": "Name / ID",
-          "target": "Target",
-          "state": "State",
-          "verdict": "Verdict",
-          "progress": "Progress",
-          "scores": "Scores"
-        }
-      },
       "comingSoon": "This screen is moving here — coming next.",
       "create": {
-        "title": "New campaign",
-        "description": "Configure and launch an agent validation campaign",
         "back": "Back",
-        "steps": {
-          "target": "Target",
-          "dataset": "Dataset",
-          "policy": "Policy"
-        },
-        "name": {
-          "label": "Campaign name",
-          "placeholder": "e.g. Nightly regression"
-        },
-        "targetKind": {
-          "label": "What do you want to evaluate?"
-        },
         "target": {
           "managed": {
             "title": "Managed instance",
-            "desc": "A team agent instance from the control plane"
-          },
-          "runtime": {
-            "title": "Runtime agent",
-            "desc": "A specific agent on a runtime, by ID"
+            "desc": "A team agent instance approved through the control plane"
           }
         },
         "instance": {
@@ -1543,19 +1576,16 @@
           "placeholder": "Select an instance",
           "loading": "Loading instances..."
         },
-        "runtime": {
-          "label": "Runtime ID",
-          "placeholder": "runtime-..."
+        "instanceTools": {
+          "label": "Tools enabled on this agent",
+          "inherited": "This instance follows its template's default tools — no per-instance override.",
+          "none": "No tools enabled on this instance."
         },
         "agent": {
           "label": "Agent ID",
           "placeholder": "agent-..."
         },
         "securityNote": "Runtime URLs are never exposed to the browser. Only controlled identifiers are accepted.",
-        "dataset": {
-          "name": "Dataset name",
-          "version": "Version (optional)"
-        },
         "manual": {
           "label": "Test cases"
         },
@@ -1568,14 +1598,13 @@
         },
         "import": {
           "json": "Import JSON",
-          "csv": "Import CSV",
           "dropHint": "Drag & drop a {{mode}} file, or click to browse",
           "dropSub": "Up to 200 cases",
           "jsonImported": "{{count}} cases imported from JSON",
-          "csvImported": "{{count}} cases imported from CSV",
           "error": "Invalid file. Check the JSON or CSV format.",
           "tooMany": "Maximum 200 cases allowed.",
-          "total": "Total: {{count}} cases to evaluate"
+          "total": "Total: {{count}} cases to evaluate",
+          "empty": "The file contains no cases."
         },
         "judge": {
           "label": "Judge profile",
@@ -1586,6 +1615,21 @@
         },
         "timeout": {
           "label": "Case timeout (s)"
+        },
+        "builtinMetrics": {
+          "label": "Metrics",
+          "help": "Pick which metrics to score this run against — nothing is added automatically.",
+          "answerRelevancy": "Answer Relevancy",
+          "answerRelevancyDesc": "Does the answer address the question asked?",
+          "faithfulness": "Faithfulness",
+          "faithfulnessDesc": "Does the answer stay grounded in the retrieved context?",
+          "contextualRelevancy": "Contextual Relevancy",
+          "contextualRelevancyDesc": "Is the retrieved context relevant to the question?",
+          "contextualPrecision": "Contextual Precision",
+          "contextualPrecisionDesc": "Are the most relevant chunks ranked first? Requires an expected output.",
+          "contextualRecall": "Contextual Recall",
+          "contextualRecallDesc": "Does the context cover everything the expected output needs? Requires an expected output.",
+          "none": "Select at least one metric to start a run."
         },
         "metrics": {
           "label": "Custom metrics",
@@ -1598,43 +1642,40 @@
           "criteria": "Criterion to evaluate",
           "criteriaPlaceholder": "e.g. The answer must name the method and cite the figure reported in the paper.",
           "parameters": "Fields the judge may read",
+          "parameterOptions": {
+            "input": "Input",
+            "actualOutput": "Actual output",
+            "expectedOutput": "Expected output",
+            "retrievalContext": "Retrieved context"
+          },
           "threshold": "Pass threshold"
         },
         "recap": {
           "title": "Summary",
-          "campaign": "Campaign",
           "targetType": "Target type",
           "managed": "Managed instance",
           "runtime": "Runtime agent",
           "instance": "Instance",
           "runtimeId": "Runtime ID",
           "agent": "Agent ID",
-          "dataset": "Dataset",
-          "cases": "Cases",
           "judge": "Judge",
           "concurrency": "Concurrency",
           "timeout": "Timeout",
+          "metrics": "Metrics",
           "customMetrics": "Custom metrics",
           "profile": "Profile",
           "profileAuto": "Automatic"
-        },
-        "nav": {
-          "prev": "Previous",
-          "next": "Next",
-          "launch": "Launch campaign"
-        },
-        "launching": "Launching...",
-        "success": "Campaign queued",
-        "error": "Failed to create the campaign"
+        }
       },
       "detail": {
-        "cancelError": "Could not cancel the campaign",
+        "cancelError": "Could not cancel the run",
         "analyzeError": "Analysis failed",
-        "loading": "Loading campaign...",
-        "notFound": "Campaign not found",
+        "loading": "Loading run...",
+        "notFound": "Run not found",
         "loadingCases": "Loading cases...",
-        "subtitle": "Campaign · {{id}}",
+        "subtitle": "Run · {{id}}",
         "back": "Back",
+        "rerun": "↻ Rerun this run",
         "cancel": "Cancel",
         "cancelling": "Cancelling...",
         "analyze": "Analyze",
@@ -1648,10 +1689,12 @@
         "stats": {
           "passed": "Passed",
           "failed": "Failed",
+          "insufficient": "Insufficient",
           "execErrors": "Exec. errors",
           "scoringErrors": "Scoring errors"
         },
         "metricScores": "Scores by metric",
+        "metricScoresPartial": "Scores by metric — partial, {{done}}/{{total}} cases scored so far",
         "globalScore": "Global score",
         "analysisTitle": "Analysis",
         "risk": "risk: {{level}}",
@@ -1659,12 +1702,12 @@
         "strengths": "Strengths",
         "weaknesses": "Weaknesses",
         "recommendations": "Recommendations",
-        "campaignInfo": "Campaign information",
+        "campaignInfo": "Run information",
         "meta": {
-          "dataset": "Dataset",
+          "dataset": "Evaluation",
           "profile": "Scoring profile",
           "judge": "Judge",
-          "team": "Team",
+          "team": "Evaluation ID",
           "created": "Created",
           "started": "Started",
           "completed": "Completed"
@@ -1679,6 +1722,8 @@
           "metrics": "Metrics"
         },
         "caseTitle": "Case detail",
+        "copyJson": "Copy JSON",
+        "copied": "Copied",
         "latency": "Latency",
         "input": "Input",
         "expected": "Expected output",
@@ -1690,6 +1735,100 @@
         "skipped": "skipped",
         "passed": "passed",
         "failed": "failed"
+      },
+      "evaluations": {
+        "title": "Evaluations",
+        "description": "Versioned, reusable case sets. Open one to see its runs.",
+        "new": "+ New evaluation",
+        "empty": "No evaluation yet. Create one to get started.",
+        "openRuns": "Runs",
+        "caseCount": "{{count}} cases",
+        "col": {
+          "name": "Name / ID",
+          "version": "Version",
+          "author": "Author",
+          "origin": "Origin",
+          "cases": "Cases"
+        },
+        "origin": {
+          "upload": "Import",
+          "manual": "Manual",
+          "capture": "Capture"
+        }
+      },
+      "evaluationCreate": {
+        "title": "New evaluation",
+        "description": "Name the evaluation and give it its cases. No run is started.",
+        "name": {
+          "label": "Evaluation name",
+          "placeholder": "e.g. usage-arxivai"
+        },
+        "versionNote": "Reusing an existing name creates a new version (v1 → v2), which becomes the current one.",
+        "submit": "Create evaluation",
+        "saving": "Creating...",
+        "success": "Evaluation “{{name}}” created as {{version}}",
+        "error": "Could not create the evaluation",
+        "mode": {
+          "label": "How do you want to supply the cases?",
+          "import": {
+            "title": "Import my dataset",
+            "desc": "A JSON file holding the cases (input / expected_output)"
+          },
+          "manual": {
+            "title": "Write the cases by hand",
+            "desc": "Type each case directly into the form"
+          }
+        }
+      },
+      "runs": {
+        "casesError": "Failed to load cases.",
+        "noCases": "No cases available.",
+        "drawerTitle": "Run cases",
+        "drawerHint": "Click a case to see full details",
+        "inputLabel": "Input",
+        "executionError": "Execution error",
+        "viewFullDetail": "View full detail →",
+        "metricsCount": "{{count}} metrics",
+        "targetInstance": "Instance · {{id}}",
+        "detail": "Detail",
+        "deleteTitle": "Delete run",
+        "deleteSuccess": "Run deleted",
+        "deleteError": "Failed to delete run",
+        "loadError": "Failed to load runs.",
+        "description": "Runs of this evaluation",
+        "backToEvaluations": "Evaluations",
+        "newRun": "+ New run",
+        "rerun": "↻ Rerun · {{target}}",
+        "rerunHint": "Reruns immediately with the last target ({{target}} · {{model}}). Use “New run…” to pick a different one.",
+        "rerunRow": "↻ Rerun",
+        "empty": "No run for this evaluation yet",
+        "versionLabel": "Evaluation {{version}}",
+        "deleteMessage": "Delete run {{id}}? This permanently removes its cases, metrics and events.",
+        "kpi": {
+          "active": "Active runs",
+          "completed": "Completed runs",
+          "casesEvaluated": "Cases evaluated",
+          "criticalFailures": "Critical failures"
+        },
+        "col": {
+          "run": "Run / ID",
+          "target": "Target",
+          "state": "State",
+          "verdict": "Verdict",
+          "progress": "Progress",
+          "scores": "Profile / judge"
+        }
+      },
+      "runCreate": {
+        "title": "New run",
+        "description": "Evaluation “{{name}}” — pick the agent to evaluate.",
+        "submit": "Start run",
+        "starting": "Starting...",
+        "success": "Run started",
+        "error": "Could not start the run",
+        "recap": {
+          "evaluation": "Evaluation"
+        }
       }
     },
     "taskActivity": {

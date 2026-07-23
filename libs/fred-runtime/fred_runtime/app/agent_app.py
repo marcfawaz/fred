@@ -56,7 +56,6 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fred_core.common.config_loader import get_config
-from fred_core.common.team_id import is_personal_team_id, personal_team_id
 from fred_core.history.history_schema import ChatMessage
 from fred_core.kpi import KPIMiddleware
 from fred_core.kpi.kpi_writer_structures import KPIActor
@@ -146,8 +145,13 @@ from fred_runtime.runtime_support.checkpoints import load_checkpoint
 from ..common.structures import AgentSettingsLike
 from ..integrations.inprocess_toolkit_registry import build_inprocess_toolkit
 from ..integrations.v2_runtime.adapters import (
+    AgentConfigAssetsAdapter,
     CompositeToolInvoker,
+    DocumentContentAdapter,
+    DocumentFolderAdapter,
     DocumentSearchAdapter,
+    DocumentSummarizeAdapter,
+    DocumentTreeAdapter,
     FredKnowledgeSearchToolInvoker,
     FredMcpToolProvider,
     FredWorkspaceFs,
@@ -734,6 +738,16 @@ def _build_runtime_services(
         binding=binding,
         settings=settings,
     )
+    # Companion document-access ports: tree listing + on-demand summarization,
+    # same private-binding doctrine as the search adapter.
+    document_tree = DocumentTreeAdapter(
+        binding=binding,
+        settings=settings,
+    )
+    document_summarize = DocumentSummarizeAdapter(
+        binding=binding,
+        settings=settings,
+    )
     tool_provider = FredMcpToolProvider(
         binding=binding,
         settings=settings,
@@ -784,6 +798,14 @@ def _build_runtime_services(
         checkpointer=runtime_config.checkpointer,
         agent_invoker=agent_invoker,
         document_search=document_search,
+        # #1903 capability ports: per-instance config assets (template fetch at
+        # tool time), image-document raw fetch, and folder listing. Same
+        # private-binding doctrine as document_search.
+        agent_assets=AgentConfigAssetsAdapter(binding=binding, settings=settings),
+        document_content=DocumentContentAdapter(binding=binding, settings=settings),
+        document_folders=DocumentFolderAdapter(binding=binding, settings=settings),
+        document_tree=document_tree,
+        document_summarize=document_summarize,
     )
 
 
@@ -1260,12 +1282,13 @@ async def _authorize_execution_or_raise(
     - security disabled (no authenticated user) → skip (dev/local).
     - ReBAC engine absent or disabled (Noop) → skip (identity-only dev posture);
       the C3 profile guarantees an enabled engine in classified deployments.
-    - a personal space (`personal-<uid>`) is intrinsic ownership, not a stored
-      OpenFGA tuple: a human caller acting on their own canonical
-      `personal_team_id(authenticated_user.uid)` is authorized without an OpenFGA
-      call; any other `personal-*` id (another user's space, or the bare
-      `"personal"` alias) is explicitly denied — never routed to OpenFGA (AUTHZ-05
-      item 8b watch item).
+    - a personal space (`personal-<uid>`) is a real ReBAC team object (AUTHZ-08):
+      the owner's `team_editor` tuple self-heals on first touch inside
+      `RebacEngine.check_user_team_permission_or_raise`, and `add_relation`'s
+      write-guard refuses any tuple naming a personal team except that one, so
+      the plain `CAN_READ` check below already authorizes the owner and denies
+      everyone else (another user's space, or the bare `"personal"` alias, for
+      which no tuple is ever provisioned) — no special-casing needed here.
     - otherwise require the caller to hold `CAN_READ` on the requested team — the
       same relation the control-plane required before it would mint a grant. The
       team is caller-supplied but safe: OpenFGA only authorizes teams the user
@@ -1341,36 +1364,14 @@ async def _authorize_execution_or_raise(
             agent_instance_id=request.agent_instance_id,
         )
         return
-    if team_id == "personal" or is_personal_team_id(team_id):
-        # Personal spaces are intrinsic ownership (AUTHZ-05 item 8b): the id is
-        # derived from the JWT subject via `personal_team_id`, is never persisted
-        # as an OpenFGA tuple, and must never be resolved by OpenFGA. Only an
-        # exact match against the caller's own canonical id is authorized; any
-        # other personal-* id (another user's space) or the bare "personal"
-        # alias (ambiguous once ReBAC is active) is denied here, before OpenFGA
-        # ever sees it.
-        if team_id == personal_team_id(authenticated_user.uid):
-            _emit_audit_event(
-                container,
-                "info",
-                "personal_space_owner_authorized",
-                user_id=authenticated_user.uid,
-                team_id=team_id,
-                agent_instance_id=request.agent_instance_id,
-            )
-            return
-        _emit_audit_event(
-            container,
-            "warning",
-            "personal_space_denied",
-            user_id=authenticated_user.uid,
-            team_id=team_id,
-            agent_instance_id=request.agent_instance_id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"user {authenticated_user.uid!r} is not authorized for team {team_id!r}",
-        )
+    # Personal spaces (AUTHZ-08, supersedes AUTHZ-05 item 8b) are now real
+    # ReBAC team objects: `RebacEngine.check_user_team_permission_or_raise`
+    # self-heals the owner's own `team_editor` tuple on first touch and
+    # `add_relation`'s write-guard refuses any other shape naming a personal
+    # team, so the bare `check_user_team_permission_or_raise` call below
+    # already authorizes the owner and denies everyone else — no special-
+    # casing needed here (the bare "personal" alias also denies normally,
+    # since no tuple is ever provisioned for that literal string).
     try:
         await rebac.check_user_team_permission_or_raise(
             authenticated_user, TeamPermission.CAN_READ, team_id
@@ -1508,6 +1509,18 @@ async def _authorize_and_resolve(
     await _enforce_session_ownership(request, authenticated_user, container)
     await _authorize_execution_or_raise(request, authenticated_user, container)
     internal_req = _to_internal_request(request)
+    # Stamp the trusted service-agent verdict (never the caller-supplied
+    # context) so per-tool-call re-authorization can mirror the bypass
+    # `_authorize_execution_or_raise` already granted above (RFC EVAL-AUTH,
+    # Solution A) instead of re-running a ReBAC check this identity was
+    # never meant to satisfy. Overwritten unconditionally, both ways, so a
+    # caller can't spoof it via a body-supplied `context.is_service_agent`.
+    ctx = dict(internal_req.context or {})
+    if authenticated_user is not None and is_service_agent(authenticated_user):
+        ctx["is_service_agent"] = "true"
+    else:
+        ctx.pop("is_service_agent", None)
+    internal_req.context = ctx
     target = await _resolve_agent_instance(
         request=internal_req,
         registry=registry,
@@ -1757,6 +1770,7 @@ async def _write_turn_history(
                     call_id=payload["call_id"],
                     content=payload.get("content", ""),
                     ok=not payload.get("is_error", False),
+                    latency_ms=payload.get("latency_ms"),
                 )
             )
             rank += 1
@@ -2163,6 +2177,7 @@ def _build_capability_save_services(
     user_id: str,
     team_id: str | None,
     access_token: str | None,
+    agent_instance_id: str | None = None,
 ) -> RuntimeServices:
     """
     Minimal `RuntimeServices` for one capability save-time validation (#1974).
@@ -2170,8 +2185,11 @@ def _build_capability_save_services(
     Why this exists:
     - `validate_config` may store uploaded asset binaries through the KF-backed
       workspace port and keep only the storage keys in the stored config
-      (RFC §3.4, §3.8) — so the save path needs `workspace_fs`, bound to the
-      saving user's identity/team, but none of the execution-only services
+      (RFC §3.4, §3.8) — so the save path needs `workspace_fs` plus the
+      per-instance `agent_assets` store (#1903), bound to the saving user's
+      identity/team, but none of the execution-only services
+    - `document_folders` lets an asset-parsing capability resolve author folder
+      strings against the agent's space at save time (#1903 image support)
     """
 
     request_id = str(uuid4())
@@ -2181,6 +2199,7 @@ def _build_capability_save_services(
             user_id=user_id,
             team_id=team_id,
             access_token=access_token,
+            agent_instance_id=agent_instance_id,
         ),
         portable_context=PortableContext(
             request_id=request_id,
@@ -2196,7 +2215,9 @@ def _build_capability_save_services(
     )
     settings = _PodAgentSettings(id=actor, name=actor, team_id=team_id, tuning=None)
     return RuntimeServices(
-        workspace_fs=FredWorkspaceFs(binding=binding, settings=settings)
+        workspace_fs=FredWorkspaceFs(binding=binding, settings=settings),
+        agent_assets=AgentConfigAssetsAdapter(binding=binding, settings=settings),
+        document_folders=DocumentFolderAdapter(binding=binding, settings=settings),
     )
 
 
@@ -2223,13 +2244,11 @@ def _effective_capability_ids(
     `default_mcp_servers` ids; a selected id that is a known-but-DISABLED
     catalog MCP server is dropped (the live tool provider skips it anyway —
     #1988 keeps that tolerance), while an id the pod knows nothing about stays
-    and fails loudly downstream. Non-ReAct templates carry no capabilities.
-    When the registry is absent the raw selection is returned unfiltered — the
-    caller decides whether that is an error.
+    and fails loudly downstream. Resolved identically for ReAct and Graph
+    agents. When the registry is absent the raw selection is returned
+    unfiltered — the caller decides whether that is an error.
     """
 
-    if not isinstance(definition, ReActAgentDefinition):
-        return []
     selected = tuning.selected_capability_ids if tuning is not None else None
     if selected is None:
         selected = [ref.id for ref in definition.default_mcp_servers]
@@ -2322,22 +2341,19 @@ def _build_capability_block(
     Returns None when the agent selects no capabilities.
 
     MCP handling (#1978, #1988): an MCP-server capability delivers its catalog
-    `agent_instructions` as a prompt fragment. The effective selection mirrors
+    `agent_instructions` as a prompt fragment via `middleware()`
+    (`_McpInstructionsMiddleware`). The effective selection mirrors
     `_active_mcp_server_refs`: a `None` capability selection (template default)
     activates the template's `default_mcp_servers` as capabilities so their
-    instructions are delivered — otherwise a default-configured agent would
-    silently lose its non-negotiable grounding contract.
+    instructions are delivered — otherwise a default ReAct agent would silently
+    lose its non-negotiable grounding contract. This block is built identically
+    for both agent kinds (CAPAB-02), but a Graph agent reads only `block.tools`
+    — MCP tools reach it (a separate, already execution-model-agnostic path,
+    `FredMcpToolProvider`), the `agent_instructions` prompt fragment does NOT
+    (Graph never reads `block.middleware` at all). A Graph agent that needs an
+    MCP server's grounding instructions must currently author them into its own
+    system prompt — this is an explicit, known gap, not yet closed (CAPAB-02).
     """
-
-    if not isinstance(definition, ReActAgentDefinition):
-        # Capabilities (incl. MCP instruction fragments) are ReAct-only (RFC §5).
-        # A non-ReAct template selecting real capabilities is still a loud error.
-        if tuning is not None and tuning.selected_capability_ids:
-            raise CapabilityError(
-                "Capabilities are only supported on ReAct agents (RFC §5); "
-                f"template '{definition.agent_id}' is not one."
-            )
-        return None
 
     selected = tuning.selected_capability_ids if tuning is not None else None
     capability_config = tuning.capability_config if tuning is not None else {}
@@ -2359,6 +2375,49 @@ def _build_capability_block(
     effective = _effective_capability_ids(tuning, definition, capability_registry)
     if not effective:
         return None
+    if isinstance(definition, GraphAgentDefinition):
+        # CAPAB-02: a capability can declare itself ReAct-only
+        # (`CapabilityManifest.execution_models`) when its runtime need is a
+        # `middleware()` hook `tools()` cannot express (e.g. PPT filler's
+        # dynamic per-turn tool schema). Selecting one on a Graph agent must
+        # fail loudly here — never silently contribute zero tools (RFC §3.9
+        # "never silently degrade").
+        react_only = [
+            cap_id
+            for cap_id in effective
+            if cap_id in capability_registry
+            and "graph"
+            not in capability_registry.capability(cap_id).manifest.execution_models
+        ]
+        if react_only:
+            raise CapabilityError(
+                f"Agent selects capabilities {react_only} which are ReAct-only "
+                "(CapabilityManifest.execution_models) and cannot run on a "
+                "Graph agent."
+            )
+        # CAPAB-02 stopgap: `CapabilityAgentBlock.hitl` is built (assembly.py)
+        # but `GraphRuntime.invoke_runtime_tool` never consults it — a
+        # capability's `HitlSpec` gates a ReAct tool call but not a Graph
+        # one. No production capability declares an active `HitlSpec` today,
+        # so refusing here costs nothing real yet; reconciling Graph's own
+        # node-level pause/resume with the per-tool HITL gate is real design
+        # work, deferred (id-legend.yaml CAPAB-02). Refusing loudly keeps the
+        # RFC §3.9 "never silently degrade" guarantee intact in the meantime
+        # — a capability with `HitlSpec`s that silently ran ungated on Graph
+        # would be exactly the kind of governance gap this platform exists to
+        # prevent.
+        hitl_gated = [
+            cap_id
+            for cap_id in effective
+            if cap_id in capability_registry
+            and capability_registry.capability(cap_id).hitl_specs()
+        ]
+        if hitl_gated:
+            raise CapabilityError(
+                f"Agent selects capabilities {hitl_gated} which declare "
+                "HitlSpec approval gates; Graph agents do not yet enforce "
+                "capability HITL (CAPAB-02) and cannot run them."
+            )
     contexts = build_capability_contexts(
         capability_registry,
         selected_capability_ids=effective,
@@ -2440,6 +2499,7 @@ async def _iterate_runtime_event_payloads(
                 "checkpoint_id": resolved_checkpoint_id,
                 "execution_action": execution_action,
                 "exchange_id": exchange_id,
+                "is_service_agent": ctx.get("is_service_agent"),
             }.items()
             if isinstance(value, str) and value
         },
@@ -2540,6 +2600,7 @@ async def _iterate_runtime_event_payloads(
             runtime = GraphRuntime(
                 definition=definition,
                 services=services,
+                capability_block=capability_block,
             )
             runtime.bind(binding)
             await runtime.activate()
@@ -2806,7 +2867,7 @@ def _build_agent_router(
         """
 
         capability_registry = _capability_registry_of(http_request)
-        available_capabilities = (
+        all_capability_entries = (
             [
                 CapabilityCatalogEntry.from_manifest(
                     capability_registry.capability(cap_id).manifest,
@@ -2826,7 +2887,21 @@ def _build_agent_router(
                 kind=definition.execution_category,
                 default_tuning=_definition_to_agent_tuning(definition),
                 available_mcp_servers=_available_mcp_servers_for_definition(definition),
-                available_capabilities=available_capabilities,
+                # CAPAB-02: a capability declared `execution_models=("react",)`
+                # must not even be offered for selection on a Graph template —
+                # `_build_capability_block` would refuse it loudly at save/run
+                # time regardless, but a picker that lists it first invites the
+                # exact "select it, save it, discover the incompatibility at
+                # first launch" flow the loud refusal exists to prevent.
+                available_capabilities=(
+                    all_capability_entries
+                    if not isinstance(definition, GraphAgentDefinition)
+                    else [
+                        entry
+                        for entry in all_capability_entries
+                        if "graph" in entry.execution_models
+                    ]
+                ),
                 default_capability_ids=[
                     ref.id for ref in definition.default_mcp_servers
                 ],
@@ -2979,6 +3054,10 @@ def _build_agent_router(
                 user_id=(caller.uid if caller is not None else None) or "anonymous",
                 team_id=team_id or None,
                 access_token=access_token,
+                agent_instance_id=(
+                    form_instance_id if isinstance(form_instance_id, str) else None
+                )
+                or None,
             ),
         )
         try:
@@ -3419,13 +3498,12 @@ def _build_agent_router(
 
     @router.delete(
         "/checkpoints/{session_id}",
-        status_code=status.HTTP_204_NO_CONTENT,
-        response_model=None,
+        status_code=status.HTTP_200_OK,
     )
     async def delete_checkpoint_thread(
         session_id: str,
         caller: KeycloakUser | None = Depends(_authenticated_user),
-    ) -> None:
+    ) -> dict[str, int]:
         """
         Purge all checkpoint data for one session.
 
@@ -3438,7 +3516,8 @@ def _build_agent_router(
         History store rows are NOT deleted — use DELETE /sessions/{session_id}
         to remove those separately.
 
-        Returns 204 on success, 403 when not owned, 503 when no checkpointer.
+        Returns {"deleted": n} (n = checkpoint rows removed) on success,
+        403 when not owned, 503 when no checkpointer.
         """
         caller_uid = caller.uid if caller is not None else None
         history_store = _get_history_store_for_owned_access(caller)
@@ -3453,7 +3532,8 @@ def _build_agent_router(
                 detail="Access denied.",
             )
         cp = _get_checkpointer()
-        await cp.adelete_thread(session_id)
+        deleted = await cp.adelete_thread(session_id)
+        return {"deleted": deleted}
 
     @router.post(
         "/execute",

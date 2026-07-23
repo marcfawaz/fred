@@ -44,7 +44,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ teamId: "team-1" }),
 }));
-vi.mock("../../../../components/ConfirmationDialogProvider", () => ({
+vi.mock("@shared/molecules/ConfirmationDialog/ConfirmationDialogProvider", () => ({
   useConfirmationDialog: () => ({ showConfirmationDialog: () => {} }),
 }));
 vi.mock("@shared/molecules/Toast/ToastProvider", () => ({
@@ -137,6 +137,10 @@ vi.mock("../../../../slices/controlPlane/controlPlaneOpenApi", () => ({
   useDeleteTeamPromptControlPlaneV1TeamsTeamIdPromptsPromptIdDeleteMutation: () => [
     async () => ({ unwrap: async () => undefined }),
   ],
+}));
+
+vi.mock("../../../../slices/controlPlane/controlPlaneApiEnhancements", () => ({
+  useUsersByIdsQuery: () => ({ data: [] }),
 }));
 
 import PromptsPage from "./PromptsPage";

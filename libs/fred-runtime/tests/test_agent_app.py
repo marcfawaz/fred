@@ -366,6 +366,86 @@ def test_create_agent_app_executes_local_authored_tools_and_honors_base_url(
     assert payloads[-1]["content"] == "Echo complete."
 
 
+def test_delete_checkpoint_thread_returns_deleted_count(monkeypatch, tmp_path) -> None:
+    """
+    `DELETE /agents/checkpoints/{session_id}` must report how many checkpoint
+    rows it actually purged, mirroring the sibling `DELETE /agents/sessions/{id}`
+    (history) endpoint's `{"deleted": n}` body.
+
+    Why this exists:
+    - before this fix the endpoint returned a bare 204 with no body, so
+      `ConversationErasureService` (control-plane, CTRLP-12) could not report a
+      real `deleted_count` for the `runtime_checkpoint` store in its erase
+      receipt — every erasure looked identical whether it purged one
+      checkpoint or a hundred.
+
+    How to use it:
+    - run via the default offline `make test` suite in `fred-runtime`
+    """
+
+    model = ToolFriendlyFakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-echo-1",
+                        "name": "demo_echo",
+                        "args": {"text": "hello"},
+                    }
+                ],
+            ),
+            AIMessage(content="Echo complete."),
+        ]
+    )
+    monkeypatch.setattr(
+        agent_app_module,
+        "_build_chat_model_factory",
+        lambda config: StaticChatModelFactory(model),
+    )
+
+    definition = _EchoAgent()
+    registry: dict[str, ReActAgentDefinition] = {definition.agent_id: definition}
+    app = create_agent_app(registry=registry, config=_build_test_config(tmp_path))
+
+    with TestClient(app) as client:
+        execute_response = client.post(
+            "/pod/v1/agents/execute",
+            json={
+                "agent_id": "rags.sample.echo",
+                "input": "hello",
+                "session_id": "session-checkpoint-delete",
+                "runtime_context": {"user_id": "alice"},
+            },
+        )
+        assert execute_response.status_code == 200
+
+        threads_before = client.get(
+            "/pod/v1/agents/checkpoints/session-checkpoint-delete"
+        )
+        assert threads_before.status_code == 200
+        assert len(threads_before.json()["checkpoints"]) > 0
+
+        delete_response = client.delete(
+            "/pod/v1/agents/checkpoints/session-checkpoint-delete"
+        )
+        assert delete_response.status_code == 200
+        deleted = delete_response.json()["deleted"]
+        assert deleted > 0
+
+        threads_after = client.get(
+            "/pod/v1/agents/checkpoints/session-checkpoint-delete"
+        )
+        assert threads_after.json()["checkpoints"] == []
+
+        # Idempotent: a retry against an already-purged thread deletes nothing.
+        retry_response = client.delete(
+            "/pod/v1/agents/checkpoints/session-checkpoint-delete"
+        )
+        assert retry_response.status_code == 200
+        assert retry_response.json() == {"deleted": 0}
+
+
 class _ContextPromptAgent(ReActAgent):
     """Tiny agent that surfaces the bound context_prompt_text through a tool."""
 
@@ -1694,6 +1774,458 @@ def test_capability_block_skips_mcp_agent_instructions_for_inactive_server() -> 
     assert fragments == []
 
 
+def test_build_capability_block_for_graph_agent_returns_tools() -> None:
+    """
+    Ensure `_build_capability_block` builds a non-empty block for a Graph agent
+    (Phase 3, NOTES-GRAPH-CAPABILITY-BRIDGE.md).
+
+    Why this exists:
+    - `_build_capability_block` and `_effective_capability_ids` used to gate
+      capabilities to `ReActAgentDefinition` only, raising `CapabilityError`
+      for any `GraphAgentDefinition` selecting a real (non-MCP) capability.
+      That gate is gone: a Graph agent can now select a capability and get
+      its `tools()` output collected into `block.tools`, exactly like a
+      ReAct agent would. Nothing yet reads `block.tools` on the Graph
+      execution path — `GraphRuntime` still ignores `capability_block`
+      entirely (Phase 4) — so this only proves the block builds without
+      error, not that a graph node can invoke the tool.
+
+    How to use it:
+    - run in the default offline fred-runtime test suite
+
+    Example:
+    - `pytest tests/test_agent_app.py::test_build_capability_block_for_graph_agent_returns_tools -q`
+    """
+    from collections.abc import Mapping as _Mapping
+
+    from fred_runtime.app.agent_app import _build_capability_block
+    from fred_runtime.capabilities import CapabilityRegistry
+    from fred_sdk.contracts.capability import (
+        AgentCapability,
+        CapabilityContext,
+        CapabilityManifest,
+        EmptyModel,
+    )
+    from fred_sdk.contracts.context import BoundRuntimeContext
+    from fred_sdk.contracts.models import (
+        AgentTuning,
+        GraphAgentDefinition,
+        GraphDefinition,
+        GraphNodeDefinition,
+    )
+    from fred_sdk.contracts.runtime import RuntimeServices
+    from langchain_core.tools import BaseTool
+    from langchain_core.tools import tool as lc_tool
+    from pydantic import BaseModel
+
+    class _NoConfig(BaseModel):
+        pass
+
+    class _GraphToolCapability(AgentCapability[_NoConfig, _NoConfig, EmptyModel]):
+        manifest = CapabilityManifest(
+            id="graph_tool_cap",
+            version="1.0.0",
+            name="cap.graph_tool_cap.name",
+            description="cap.graph_tool_cap.description",
+            icon="Build",
+        )
+        ConfigModel = _NoConfig
+
+        def tools(
+            self, ctx: CapabilityContext[_NoConfig, EmptyModel]
+        ) -> list[BaseTool]:
+            del ctx
+
+            @lc_tool
+            def graph_probe(text: str) -> str:
+                """Echo text back."""
+                return text
+
+            return [graph_probe]
+
+    class _MinInput(BaseModel):
+        message: str = ""
+
+    class _MinState(BaseModel):
+        message: str = ""
+
+    class _MinGraphAgent(GraphAgentDefinition):
+        agent_id: str = "test.graph_capability"
+        role: str = "test"
+        description: str = "test"
+
+        def build_graph(self) -> GraphDefinition:
+            return GraphDefinition(
+                state_model_name="MinState",
+                entry_node="n",
+                nodes=(GraphNodeDefinition(node_id="n", title="N"),),
+            )
+
+        def input_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def state_model(self) -> type[BaseModel]:
+            return _MinState
+
+        def output_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def build_initial_state(
+            self, input_model: BaseModel, binding: BoundRuntimeContext
+        ) -> BaseModel:
+            return _MinState(message=getattr(input_model, "message", ""))
+
+        def node_handlers(self) -> _Mapping[str, object]:
+            return {}
+
+        def build_output(self, state: BaseModel) -> BaseModel:
+            return _MinInput(message=getattr(state, "message", ""))
+
+    definition = _MinGraphAgent()
+    registry = CapabilityRegistry()
+    registry.register(_GraphToolCapability())
+    tuning = AgentTuning(
+        role=definition.role,
+        description=definition.description,
+        selected_capability_ids=["graph_tool_cap"],
+    )
+
+    block = _build_capability_block(
+        registry,
+        tuning,
+        definition=definition,
+        services=RuntimeServices(),
+        user_id=None,
+        session_id=None,
+        team_id=None,
+        agent_instance_id=None,
+    )
+
+    assert block is not None
+    assert [t.name for t in block.tools] == ["graph_probe"]
+
+
+def test_build_capability_block_rejects_react_only_capability_for_graph_agent() -> None:
+    """
+    A capability declaring `execution_models=("react",)` (a `middleware()`-only
+    hook `tools()` can't express) must fail LOUDLY when a Graph agent selects
+    it — never silently build with zero tools (CAPAB-02, RFC §3.9 "never
+    silently degrade"). Companion to
+    `test_build_capability_block_for_graph_agent_returns_tools` above, which
+    proves the graph-capable ("react", "graph") case still works.
+
+    Example:
+    - `pytest tests/test_agent_app.py::test_build_capability_block_rejects_react_only_capability_for_graph_agent -q`
+    """
+    from collections.abc import Mapping as _Mapping
+
+    from fred_runtime.app.agent_app import CapabilityError, _build_capability_block
+    from fred_runtime.capabilities import CapabilityRegistry
+    from fred_sdk.contracts.capability import (
+        AgentCapability,
+        CapabilityContext,
+        CapabilityManifest,
+        EmptyModel,
+    )
+    from fred_sdk.contracts.context import BoundRuntimeContext
+    from fred_sdk.contracts.models import (
+        AgentTuning,
+        GraphAgentDefinition,
+        GraphDefinition,
+        GraphNodeDefinition,
+    )
+    from fred_sdk.contracts.runtime import RuntimeServices
+    from langchain.agents.middleware import AgentMiddleware
+    from pydantic import BaseModel
+
+    class _NoConfig(BaseModel):
+        pass
+
+    class _ReactOnlyCapability(AgentCapability[_NoConfig, _NoConfig, EmptyModel]):
+        manifest = CapabilityManifest(
+            id="react_only_cap",
+            version="1.0.0",
+            name="cap.react_only_cap.name",
+            description="cap.react_only_cap.description",
+            icon="Build",
+            execution_models=("react",),
+        )
+        ConfigModel = _NoConfig
+
+        def middleware(
+            self, ctx: CapabilityContext[_NoConfig, EmptyModel]
+        ) -> list[AgentMiddleware]:
+            del ctx
+            return []
+
+    class _MinInput(BaseModel):
+        message: str = ""
+
+    class _MinState(BaseModel):
+        message: str = ""
+
+    class _MinGraphAgent(GraphAgentDefinition):
+        agent_id: str = "test.graph_capability_react_only"
+        role: str = "test"
+        description: str = "test"
+
+        def build_graph(self) -> GraphDefinition:
+            return GraphDefinition(
+                state_model_name="MinState",
+                entry_node="n",
+                nodes=(GraphNodeDefinition(node_id="n", title="N"),),
+            )
+
+        def input_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def state_model(self) -> type[BaseModel]:
+            return _MinState
+
+        def output_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def build_initial_state(
+            self, input_model: BaseModel, binding: BoundRuntimeContext
+        ) -> BaseModel:
+            return _MinState(message=getattr(input_model, "message", ""))
+
+        def node_handlers(self) -> _Mapping[str, object]:
+            return {}
+
+        def build_output(self, state: BaseModel) -> BaseModel:
+            return _MinInput(message=getattr(state, "message", ""))
+
+    definition = _MinGraphAgent()
+    registry = CapabilityRegistry()
+    registry.register(_ReactOnlyCapability())
+    tuning = AgentTuning(
+        role=definition.role,
+        description=definition.description,
+        selected_capability_ids=["react_only_cap"],
+    )
+
+    with pytest.raises(CapabilityError, match="react_only_cap"):
+        _build_capability_block(
+            registry,
+            tuning,
+            definition=definition,
+            services=RuntimeServices(),
+            user_id=None,
+            session_id=None,
+            team_id=None,
+            agent_instance_id=None,
+        )
+
+
+def test_build_capability_block_rejects_hitl_gated_capability_for_graph_agent() -> None:
+    """
+    CAPAB-02 stopgap: `GraphRuntime` never consults `CapabilityAgentBlock.hitl`
+    (`invoke_runtime_tool` calls the tool directly) — a capability declaring a
+    `HitlSpec` approval gate would silently run ungated on a Graph agent. Full
+    Graph HITL enforcement is deferred (id-legend.yaml CAPAB-02); until then,
+    selecting such a capability on a Graph agent must fail loudly, not run
+    unapproved.
+
+    Example:
+    - `pytest tests/test_agent_app.py::test_build_capability_block_rejects_hitl_gated_capability_for_graph_agent -q`
+    """
+    from collections.abc import Mapping as _Mapping
+
+    from fred_runtime.app.agent_app import CapabilityError, _build_capability_block
+    from fred_runtime.capabilities import CapabilityRegistry
+    from fred_sdk.contracts.capability import (
+        AgentCapability,
+        CapabilityContext,
+        CapabilityManifest,
+        EmptyModel,
+        HitlSpec,
+    )
+    from fred_sdk.contracts.context import BoundRuntimeContext
+    from fred_sdk.contracts.models import (
+        AgentTuning,
+        GraphAgentDefinition,
+        GraphDefinition,
+        GraphNodeDefinition,
+    )
+    from fred_sdk.contracts.runtime import RuntimeServices
+    from langchain_core.tools import BaseTool
+    from langchain_core.tools import tool as lc_tool
+    from pydantic import BaseModel
+
+    class _NoConfig(BaseModel):
+        pass
+
+    class _HitlGatedCapability(AgentCapability[_NoConfig, _NoConfig, EmptyModel]):
+        manifest = CapabilityManifest(
+            id="hitl_gated_cap",
+            version="1.0.0",
+            name="cap.hitl_gated_cap.name",
+            description="cap.hitl_gated_cap.description",
+            icon="Build",
+        )
+        ConfigModel = _NoConfig
+
+        def tools(
+            self, ctx: CapabilityContext[_NoConfig, EmptyModel]
+        ) -> list[BaseTool]:
+            del ctx
+
+            @lc_tool
+            def gated_probe(text: str) -> str:
+                """Echo text back."""
+                return text
+
+            return [gated_probe]
+
+        def hitl_specs(self) -> list[HitlSpec]:
+            return [HitlSpec(tool="gated_probe", require=True)]
+
+    class _MinInput(BaseModel):
+        message: str = ""
+
+    class _MinState(BaseModel):
+        message: str = ""
+
+    class _MinGraphAgent(GraphAgentDefinition):
+        agent_id: str = "test.graph_capability_hitl_gated"
+        role: str = "test"
+        description: str = "test"
+
+        def build_graph(self) -> GraphDefinition:
+            return GraphDefinition(
+                state_model_name="MinState",
+                entry_node="n",
+                nodes=(GraphNodeDefinition(node_id="n", title="N"),),
+            )
+
+        def input_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def state_model(self) -> type[BaseModel]:
+            return _MinState
+
+        def output_model(self) -> type[BaseModel]:
+            return _MinInput
+
+        def build_initial_state(
+            self, input_model: BaseModel, binding: BoundRuntimeContext
+        ) -> BaseModel:
+            return _MinState(message=getattr(input_model, "message", ""))
+
+        def node_handlers(self) -> _Mapping[str, object]:
+            return {}
+
+        def build_output(self, state: BaseModel) -> BaseModel:
+            return _MinInput(message=getattr(state, "message", ""))
+
+    definition = _MinGraphAgent()
+    registry = CapabilityRegistry()
+    registry.register(_HitlGatedCapability())
+    tuning = AgentTuning(
+        role=definition.role,
+        description=definition.description,
+        selected_capability_ids=["hitl_gated_cap"],
+    )
+
+    with pytest.raises(CapabilityError, match="hitl_gated_cap"):
+        _build_capability_block(
+            registry,
+            tuning,
+            definition=definition,
+            services=RuntimeServices(),
+            user_id=None,
+            session_id=None,
+            team_id=None,
+            agent_instance_id=None,
+        )
+
+
+def test_capability_block_gives_each_mcp_instructions_middleware_a_unique_name() -> (
+    None
+):
+    """
+    Ensure two selected MCP servers with `agent_instructions` yield middleware
+    with DISTINCT `.name`s.
+
+    Why this exists:
+    - `create_agent` rejects a middleware list with duplicate `.name`s
+      ("Please remove duplicate middleware instances."). `AgentMiddleware.name`
+      defaults to the class name, so before the per-server `.name` override two
+      `_McpInstructionsMiddleware` instances collided and blew up executor
+      build for any agent selecting >1 MCP server with `agent_instructions`.
+    - guards the fix: `.name` keys on the catalog server id.
+
+    How to use it:
+    - run in the default offline fred-runtime test suite
+
+    Example:
+    - `pytest tests/test_agent_app.py::test_capability_block_gives_each_mcp_instructions_middleware_a_unique_name -q`
+    """
+    from fred_runtime.app.agent_app import _build_capability_block
+    from fred_runtime.capabilities import CapabilityRegistry, register_mcp_capabilities
+    from fred_runtime.capabilities.mcp import _McpInstructionsMiddleware
+    from fred_sdk.contracts.models import (
+        AgentTuning,
+        MCPServerConfiguration,
+        MCPServerRef,
+    )
+    from fred_sdk.contracts.runtime import RuntimeServices
+
+    definition = _EchoAgent().model_copy(
+        update={
+            "default_mcp_servers": (
+                MCPServerRef(id="mcp-search"),
+                MCPServerRef(id="mcp-storage"),
+            )
+        }
+    )
+    registry = CapabilityRegistry()
+    register_mcp_capabilities(
+        registry,
+        [
+            MCPServerConfiguration.model_validate(
+                {
+                    "id": "mcp-search",
+                    "name": "Search",
+                    "agent_instructions": "Always cite retrieved claims.",
+                }
+            ),
+            MCPServerConfiguration.model_validate(
+                {
+                    "id": "mcp-storage",
+                    "name": "Storage",
+                    "agent_instructions": "Prefer the newest object version.",
+                }
+            ),
+        ],
+    )
+    tuning = AgentTuning(
+        role=definition.role,
+        description=definition.description,
+        selected_capability_ids=["mcp-search", "mcp-storage"],
+    )
+
+    block = _build_capability_block(
+        registry,
+        tuning,
+        definition=definition,
+        services=RuntimeServices(),
+        user_id=None,
+        session_id=None,
+        team_id=None,
+        agent_instance_id=None,
+    )
+
+    assert block is not None
+    names = [
+        mw.name for mw in block.middleware if isinstance(mw, _McpInstructionsMiddleware)
+    ]
+    assert names == ["McpInstructions[mcp-search]", "McpInstructions[mcp-storage]"]
+    # The invariant create_agent enforces: no duplicate middleware names.
+    assert len(set(names)) == len(names)
+
+
 def test_build_mcp_capability_id_and_team_scope_come_from_the_catalog_server() -> None:
     """
     Ensure `build_mcp_capability` sets the manifest id to the plain catalog
@@ -1961,12 +2493,16 @@ _BOB = KeycloakUser(uid="bob", username="bob", roles=[], email=None)
 
 
 @pytest.mark.asyncio
-async def test_authorize_allows_personal_space_owner_without_openfga(
+async def test_authorize_allows_personal_space_owner_via_rebac_check(
     monkeypatch, minimal_config
 ) -> None:
     """A human caller acting on their own canonical personal_team_id is authorized
-    as intrinsic ownership — no OpenFGA call (AUTHZ-05 item 8b watch item)."""
-    engine = _FakeRebacEngine(enabled=True, deny=True)  # would deny if consulted
+    through the plain `CAN_READ` team check — no special-casing here (AUTHZ-08,
+    supersedes AUTHZ-05 item 8b). In the real system this succeeds because
+    `RebacEngine.check_user_team_permission_or_raise` self-heals the owner's own
+    `team_editor` tuple on first touch; this test only proves agent_app.py no
+    longer short-circuits before the check, i.e. the engine IS consulted."""
+    engine = _FakeRebacEngine(enabled=True, deny=False)  # models the self-healed tuple
     _wire_engine(monkeypatch, engine)
     container = PodApplicationContext(minimal_config)
 
@@ -1974,20 +2510,27 @@ async def test_authorize_allows_personal_space_owner_without_openfga(
         _managed_request(team_id=personal_team_id(_ALICE.uid)), _ALICE, container
     )
 
-    assert engine.calls == []
+    assert engine.calls == [
+        ("alice", TeamPermission.CAN_READ, personal_team_id(_ALICE.uid))
+    ]
     with container._audit_events_lock:
         events = list(container.audit_events_buffer)
-    assert events[-1]["audit_event"] == "personal_space_owner_authorized"
+    assert events[-1]["audit_event"] == "rebac_authorized"
     assert events[-1].get("team_id") == personal_team_id(_ALICE.uid)
 
 
 @pytest.mark.asyncio
-async def test_authorize_denies_other_users_personal_space(
+async def test_authorize_denies_other_users_personal_space_via_rebac_check(
     monkeypatch, minimal_config
 ) -> None:
-    """Alice requesting Bob's personal space is denied outright — a permissive
-    (or residual) OpenFGA tuple must never be able to rescue this."""
-    engine = _FakeRebacEngine(enabled=True, deny=False)  # would allow if consulted
+    """Alice requesting Bob's personal space is denied — via the plain `CAN_READ`
+    team check, not a local identity guard. In the real system no tuple is ever
+    provisioned for Alice on Bob's space (self-heal only ever grants the space's
+    own owner), and `RebacEngine.add_relation`'s write-guard refuses any other
+    shape naming a personal team (AUTHZ-08) — that invariant is proven in
+    fred-core's own test suite, not here. This test only proves agent_app.py
+    defers to the check rather than special-casing the outcome."""
+    engine = _FakeRebacEngine(enabled=True, deny=True)  # models "no tuple exists"
     _wire_engine(monkeypatch, engine)
     container = PodApplicationContext(minimal_config)
 
@@ -1997,20 +2540,23 @@ async def test_authorize_denies_other_users_personal_space(
         )
 
     assert exc.value.status_code == 403
-    assert engine.calls == []
+    assert engine.calls == [
+        ("alice", TeamPermission.CAN_READ, personal_team_id(_BOB.uid))
+    ]
     with container._audit_events_lock:
         events = list(container.audit_events_buffer)
-    assert events[-1]["audit_event"] == "personal_space_denied"
+    assert events[-1]["audit_event"] == "rebac_denied"
     assert events[-1].get("user_id") == "alice"
 
 
 @pytest.mark.asyncio
-async def test_authorize_denies_ambiguous_personal_alias(
+async def test_authorize_denies_bare_personal_alias(
     monkeypatch, minimal_config
 ) -> None:
-    """The bare "personal" alias is ambiguous once ReBAC is active — reject it
-    rather than resolving it as if it meant the caller's own space."""
-    engine = _FakeRebacEngine(enabled=True, deny=False)
+    """The bare "personal" alias is not `is_personal_team_id`-shaped, so it is
+    just an ordinary (always-tupleless) team id post-AUTHZ-08 — denied by the
+    plain check like any other unknown team, not by a dedicated alias guard."""
+    engine = _FakeRebacEngine(enabled=True, deny=True)
     _wire_engine(monkeypatch, engine)
     container = PodApplicationContext(minimal_config)
 
@@ -2020,7 +2566,7 @@ async def test_authorize_denies_ambiguous_personal_alias(
         )
 
     assert exc.value.status_code == 403
-    assert engine.calls == []
+    assert engine.calls == [("alice", TeamPermission.CAN_READ, "personal")]
 
 
 # ---------------------------------------------------------------------------

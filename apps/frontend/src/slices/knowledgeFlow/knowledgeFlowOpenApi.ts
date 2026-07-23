@@ -355,6 +355,26 @@ const injectedRtkApi = api.injectEndpoints({
     rerankDocuments: build.mutation<RerankDocumentsApiResponse, RerankDocumentsApiArg>({
       query: (queryArg) => ({ url: `/knowledge-flow/v1/vector/rerank`, method: "POST", body: queryArg.rerankRequest }),
     }),
+    getDocumentTreeKnowledgeFlowV1DocumentsTreePost: build.mutation<
+      GetDocumentTreeKnowledgeFlowV1DocumentsTreePostApiResponse,
+      GetDocumentTreeKnowledgeFlowV1DocumentsTreePostApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/knowledge-flow/v1/documents/tree`,
+        method: "POST",
+        body: queryArg.documentTreeRequest,
+      }),
+    }),
+    summarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePost: build.mutation<
+      SummarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePostApiResponse,
+      SummarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePostApiArg
+    >({
+      query: (queryArg) => ({
+        url: `/knowledge-flow/v1/documents/${queryArg.documentUid}/summarize`,
+        method: "POST",
+        body: queryArg.summarizeDocumentRequest,
+      }),
+    }),
     queryKnowledgeFlowV1KpiQueryPost: build.mutation<
       QueryKnowledgeFlowV1KpiQueryPostApiResponse,
       QueryKnowledgeFlowV1KpiQueryPostApiArg
@@ -587,9 +607,9 @@ const injectedRtkApi = api.injectEndpoints({
     >({
       query: (queryArg) => ({ url: `/knowledge-flow/v1/dev/bench/runs/${queryArg.runId}`, method: "DELETE" }),
     }),
-    listTabularDatasets: build.query<ListTabularDatasetsApiResponse, ListTabularDatasetsApiArg>({
+    listTabularDocuments: build.query<ListTabularDocumentsApiResponse, ListTabularDocumentsApiArg>({
       query: (queryArg) => ({
-        url: `/knowledge-flow/v1/tabular/datasets`,
+        url: `/knowledge-flow/v1/tabular/documents`,
         params: {
           document_library_tags_ids: queryArg.documentLibraryTagsIds,
           owner_filter: queryArg.ownerFilter,
@@ -597,15 +617,19 @@ const injectedRtkApi = api.injectEndpoints({
         },
       }),
     }),
-    getTabularDatasetSchema: build.query<GetTabularDatasetSchemaApiResponse, GetTabularDatasetSchemaApiArg>({
+    getTabularDocumentsSchemas: build.query<GetTabularDocumentsSchemasApiResponse, GetTabularDocumentsSchemasApiArg>({
       query: (queryArg) => ({
-        url: `/knowledge-flow/v1/tabular/datasets/${queryArg.documentUid}/schema`,
+        url: `/knowledge-flow/v1/tabular/documents/schemas`,
         params: {
+          document_uids: queryArg.documentUids,
           document_library_tags_ids: queryArg.documentLibraryTagsIds,
           owner_filter: queryArg.ownerFilter,
           team_id: queryArg.teamId,
         },
       }),
+    }),
+    getTabularDocumentMarkdown: build.query<GetTabularDocumentMarkdownApiResponse, GetTabularDocumentMarkdownApiArg>({
+      query: (queryArg) => ({ url: `/knowledge-flow/v1/tabular/documents/${queryArg.documentUid}/markdown` }),
     }),
     readQuery: build.mutation<ReadQueryApiResponse, ReadQueryApiArg>({
       query: (queryArg) => ({
@@ -614,105 +638,12 @@ const injectedRtkApi = api.injectEndpoints({
         body: queryArg.tabularQueryRequest,
       }),
     }),
-    listDatasets: build.query<ListDatasetsApiResponse, ListDatasetsApiArg>({
+    searchTabularValues: build.mutation<SearchTabularValuesApiResponse, SearchTabularValuesApiArg>({
       query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/list_datasets`,
-        params: {
-          document_library_tags_ids: queryArg.documentLibraryTagsIds,
-          owner_filter: queryArg.ownerFilter,
-          team_id: queryArg.teamId,
-        },
-      }),
-    }),
-    setDataset: build.mutation<SetDatasetApiResponse, SetDatasetApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/set_dataset`,
+        url: `/knowledge-flow/v1/tabular/search`,
         method: "POST",
-        body: queryArg.setDatasetRequest,
+        body: queryArg.tabularSearchRequest,
       }),
-    }),
-    head: build.query<HeadApiResponse, HeadApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/head`,
-        params: {
-          n: queryArg.n,
-        },
-      }),
-    }),
-    describe: build.query<DescribeApiResponse, DescribeApiArg>({
-      query: () => ({ url: `/knowledge-flow/v1/stat/describe` }),
-    }),
-    detectOutliers: build.mutation<DetectOutliersApiResponse, DetectOutliersApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/detect_outliers`,
-        method: "POST",
-        body: queryArg.detectOutliersRequest,
-      }),
-    }),
-    correlations: build.query<CorrelationsApiResponse, CorrelationsApiArg>({
-      query: () => ({ url: `/knowledge-flow/v1/stat/correlations` }),
-    }),
-    plotHistogram: build.mutation<PlotHistogramApiResponse, PlotHistogramApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/plot/histogram`,
-        method: "POST",
-        body: queryArg.plotHistogramRequest,
-      }),
-    }),
-    plotScatter: build.mutation<PlotScatterApiResponse, PlotScatterApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/plot/scatter`,
-        method: "POST",
-        body: queryArg.plotScatterRequest,
-      }),
-    }),
-    trainModel: build.mutation<TrainModelApiResponse, TrainModelApiArg>({
-      query: (queryArg) => ({ url: `/knowledge-flow/v1/stat/train`, method: "POST", body: queryArg.trainModelRequest }),
-    }),
-    evaluateModel: build.query<EvaluateModelApiResponse, EvaluateModelApiArg>({
-      query: () => ({ url: `/knowledge-flow/v1/stat/evaluate` }),
-    }),
-    predictRow: build.mutation<PredictRowApiResponse, PredictRowApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/predict_row`,
-        method: "POST",
-        body: queryArg.predictRowRequest,
-      }),
-    }),
-    saveModel: build.mutation<SaveModelApiResponse, SaveModelApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/save_model`,
-        method: "POST",
-        body: queryArg.saveModelRequest,
-      }),
-    }),
-    listModels: build.query<ListModelsApiResponse, ListModelsApiArg>({
-      query: () => ({ url: `/knowledge-flow/v1/stat/list_models` }),
-    }),
-    loadModel: build.mutation<LoadModelApiResponse, LoadModelApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/load_model`,
-        method: "POST",
-        body: queryArg.loadModelRequest,
-      }),
-    }),
-    testDistribution: build.query<TestDistributionApiResponse, TestDistributionApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/test_distribution`,
-        params: {
-          column: queryArg.column,
-        },
-      }),
-    }),
-    detectOutliersMl: build.mutation<DetectOutliersMlApiResponse, DetectOutliersMlApiArg>({
-      query: (queryArg) => ({
-        url: `/knowledge-flow/v1/stat/detect_outliers_ml`,
-        method: "POST",
-        body: queryArg.detectOutliersMlRequest,
-      }),
-    }),
-    runPca: build.mutation<RunPcaApiResponse, RunPcaApiArg>({
-      query: (queryArg) => ({ url: `/knowledge-flow/v1/stat/pca`, method: "POST", body: queryArg.pcaRequest }),
     }),
     osHealth: build.query<OsHealthApiResponse, OsHealthApiArg>({
       query: () => ({ url: `/knowledge-flow/v1/os/health` }),
@@ -1222,6 +1153,17 @@ export type RerankDocumentsApiResponse = /** status 200 Successful Response */ V
 export type RerankDocumentsApiArg = {
   rerankRequest: RerankRequest;
 };
+export type GetDocumentTreeKnowledgeFlowV1DocumentsTreePostApiResponse =
+  /** status 200 Successful Response */ DocumentTreeResponse;
+export type GetDocumentTreeKnowledgeFlowV1DocumentsTreePostApiArg = {
+  documentTreeRequest: DocumentTreeRequest;
+};
+export type SummarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePostApiResponse =
+  /** status 200 Successful Response */ SummarizeDocumentResponse;
+export type SummarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePostApiArg = {
+  documentUid: string;
+  summarizeDocumentRequest: SummarizeDocumentRequest;
+};
 export type QueryKnowledgeFlowV1KpiQueryPostApiResponse = /** status 200 Successful Response */ KpiQueryResult;
 export type QueryKnowledgeFlowV1KpiQueryPostApiArg = {
   kpiQuery: KpiQuery;
@@ -1376,94 +1318,40 @@ export type DeleteRunKnowledgeFlowV1DevBenchRunsRunIdDeleteApiResponse = /** sta
 export type DeleteRunKnowledgeFlowV1DevBenchRunsRunIdDeleteApiArg = {
   runId: string;
 };
-export type ListTabularDatasetsApiResponse = /** status 200 Successful Response */ TabularDatasetResponse[];
-export type ListTabularDatasetsApiArg = {
-  /** Optional library tag IDs used to keep datasets inside selected libraries. */
+export type ListTabularDocumentsApiResponse = /** status 200 Successful Response */ TabularDocumentResponse[];
+export type ListTabularDocumentsApiArg = {
+  /** Optional library tag IDs used to keep documents inside selected libraries. */
   documentLibraryTagsIds?: string[] | null;
   /** Optional ownership scope: 'personal' or 'team'. */
   ownerFilter?: OwnerFilter | null;
   /** Team ID, required when owner_filter is 'team'. */
   teamId?: string | null;
 };
-export type GetTabularDatasetSchemaApiResponse = /** status 200 Successful Response */ TabularDatasetSchemaResponse;
-export type GetTabularDatasetSchemaApiArg = {
-  /** Document UID of the dataset to describe */
-  documentUid: string;
-  /** Optional library tag IDs used to keep datasets inside selected libraries. */
+export type GetTabularDocumentsSchemasApiResponse =
+  /** status 200 Successful Response */ TabularDocumentSchemaResponse[];
+export type GetTabularDocumentsSchemasApiArg = {
+  /** Document UIDs to describe (repeat the parameter for several documents). */
+  documentUids: string[];
+  /** Optional library tag IDs used to keep documents inside selected libraries. */
   documentLibraryTagsIds?: string[] | null;
   /** Optional ownership scope: 'personal' or 'team'. */
   ownerFilter?: OwnerFilter | null;
   /** Team ID, required when owner_filter is 'team'. */
   teamId?: string | null;
+};
+export type GetTabularDocumentMarkdownApiResponse =
+  /** status 200 Successful Response */ TabularDocumentMarkdownResponse;
+export type GetTabularDocumentMarkdownApiArg = {
+  /** Document UID of the spreadsheet to read */
+  documentUid: string;
 };
 export type ReadQueryApiResponse = /** status 200 Successful Response */ RawSqlResponse;
 export type ReadQueryApiArg = {
   tabularQueryRequest: TabularQueryRequest;
 };
-export type ListDatasetsApiResponse = /** status 200 Successful Response */ any;
-export type ListDatasetsApiArg = {
-  /** Optional library tag IDs used to keep datasets inside selected libraries. */
-  documentLibraryTagsIds?: string[] | null;
-  /** Optional ownership scope: 'personal' or 'team'. */
-  ownerFilter?: OwnerFilter | null;
-  /** Team ID, required when owner_filter is 'team'. */
-  teamId?: string | null;
-};
-export type SetDatasetApiResponse = /** status 200 Successful Response */ any;
-export type SetDatasetApiArg = {
-  setDatasetRequest: SetDatasetRequest;
-};
-export type HeadApiResponse = /** status 200 Successful Response */ any;
-export type HeadApiArg = {
-  n?: number;
-};
-export type DescribeApiResponse = /** status 200 Successful Response */ any;
-export type DescribeApiArg = void;
-export type DetectOutliersApiResponse = /** status 200 Successful Response */ any;
-export type DetectOutliersApiArg = {
-  detectOutliersRequest: DetectOutliersRequest;
-};
-export type CorrelationsApiResponse = /** status 200 Successful Response */ any;
-export type CorrelationsApiArg = void;
-export type PlotHistogramApiResponse = /** status 200 Successful Response */ any;
-export type PlotHistogramApiArg = {
-  plotHistogramRequest: PlotHistogramRequest;
-};
-export type PlotScatterApiResponse = /** status 200 Successful Response */ any;
-export type PlotScatterApiArg = {
-  plotScatterRequest: PlotScatterRequest;
-};
-export type TrainModelApiResponse = /** status 200 Successful Response */ any;
-export type TrainModelApiArg = {
-  trainModelRequest: TrainModelRequest;
-};
-export type EvaluateModelApiResponse = /** status 200 Successful Response */ any;
-export type EvaluateModelApiArg = void;
-export type PredictRowApiResponse = /** status 200 Successful Response */ any;
-export type PredictRowApiArg = {
-  predictRowRequest: PredictRowRequest;
-};
-export type SaveModelApiResponse = /** status 200 Successful Response */ any;
-export type SaveModelApiArg = {
-  saveModelRequest: SaveModelRequest;
-};
-export type ListModelsApiResponse = /** status 200 Successful Response */ any;
-export type ListModelsApiArg = void;
-export type LoadModelApiResponse = /** status 200 Successful Response */ any;
-export type LoadModelApiArg = {
-  loadModelRequest: LoadModelRequest;
-};
-export type TestDistributionApiResponse = /** status 200 Successful Response */ any;
-export type TestDistributionApiArg = {
-  column: string;
-};
-export type DetectOutliersMlApiResponse = /** status 200 Successful Response */ any;
-export type DetectOutliersMlApiArg = {
-  detectOutliersMlRequest: DetectOutliersMlRequest;
-};
-export type RunPcaApiResponse = /** status 200 Successful Response */ any;
-export type RunPcaApiArg = {
-  pcaRequest: PcaRequest;
+export type SearchTabularValuesApiResponse = /** status 200 Successful Response */ TabularSearchResponse;
+export type SearchTabularValuesApiArg = {
+  tabularSearchRequest: TabularSearchRequest;
 };
 export type OsHealthApiResponse = /** status 200 Successful Response */ any;
 export type OsHealthApiArg = void;
@@ -2082,6 +1970,8 @@ export type VectorSearchHit = {
   slide_id?: number | null;
   has_visual_evidence?: boolean | null;
   slide_image_uri?: string | null;
+  /** content (default, real ingested prose/data) or 'dataset_pointer' (a discovery pointer to a structured dataset, never citable as a source). */
+  chunk_kind?: string | null;
   /** Document UID */
   uid: string;
   title: string;
@@ -2161,6 +2051,36 @@ export type RerankRequest = {
   documents: VectorSearchHit[];
   /** Number of top-reranked chunks to consider */
   top_r?: number;
+};
+export type DocumentTreeResponse = {
+  tree: string;
+  /** True if any branch was pruned or items were omitted to fit max_chars. */
+  truncated: boolean;
+};
+export type DocumentTreeRequest = {
+  /** Folder path prefix to start from, e.g. 'Sales/HR'. None lists from the root. */
+  working_directory?: string | null;
+  /** Restrict the listing to these folder tag ids (and their descendants), when set. */
+  tag_ids?: string[] | null;
+  /** Render budget for the returned tree text. Oversized trees are pruned, deepest branches first. */
+  max_chars?: number;
+  /** Filter by ownership: 'personal' for user-owned folders, 'team' for team-owned folders. */
+  owner_filter?: OwnerFilter | null;
+  /** Team ID, required when owner_filter is 'team'. */
+  team_id?: string | null;
+};
+export type SummarizeDocumentResponse = {
+  document_uid: string;
+  summary: string;
+  /** True if a corrective pass had to shrink the summary to fit max_chars. */
+  shrunk_for_budget: boolean;
+  keywords?: string[];
+};
+export type SummarizeDocumentRequest = {
+  /** Free-text instruction steering the summary: focus area, audience, what to look for, desired length/tone. */
+  instruction?: string | null;
+  /** Target ceiling for the returned summary length, in characters. */
+  max_chars?: number;
 };
 export type KpiQueryResultRow = {
   group: {
@@ -2424,29 +2344,46 @@ export type SavedRunSummary = {
   size?: number | null;
   modified?: string | null;
 };
-export type TabularColumnSchema = {
-  name: string;
-  dtype: "string" | "integer" | "float" | "boolean" | "datetime" | "unknown";
+export type TabularTableSummary = {
+  query_alias: string;
+  sheet?: string | null;
+  title?: string | null;
+  row_count?: number | null;
+  generated_at?: string | null;
 };
-export type TabularDatasetResponse = {
+export type TabularDocumentResponse = {
   document_uid: string;
   document_name: string;
-  query_alias: string;
-  row_count?: number | null;
-  columns?: TabularColumnSchema[];
+  kind: "csv" | "spreadsheet";
+  tables?: TabularTableSummary[];
   tag_ids?: string[];
   tag_names?: string[];
   source_tag?: string | null;
-  generated_at?: string | null;
 };
-export type TabularDatasetSchemaResponse = {
+export type TabularColumnSchema = {
+  name: string;
+  dtype: "string" | "integer" | "float" | "boolean" | "datetime" | "unknown";
+  /** Every distinct non-null value observed for this column, only when its cardinality is low enough (see the ingestion threshold) to be useful as SQL-generation grounding — e.g. the exact stored casing of a status or severity column. None for high-cardinality or non-string columns. */
+  sample_values?: string[] | null;
+};
+export type TabularTableSchema = {
+  query_alias: string;
+  sheet?: string | null;
+  title?: string | null;
+  row_count?: number | null;
+  generated_at?: string | null;
+  columns?: TabularColumnSchema[];
+};
+export type TabularDocumentSchemaResponse = {
   document_uid: string;
   document_name: string;
-  query_alias: string;
-  columns?: TabularColumnSchema[];
-  row_count?: number | null;
+  kind: "csv" | "spreadsheet";
+  tables?: TabularTableSchema[];
   source_tag?: string | null;
-  generated_at?: string | null;
+};
+export type TabularDocumentMarkdownResponse = {
+  document_uid: string;
+  content: string;
 };
 export type RawSqlResponse = {
   sql_query: string;
@@ -2468,47 +2405,41 @@ export type TabularQueryRequest = {
   team_id?: string | null;
   max_rows?: number | null;
 };
-export type SetDatasetRequest = {
+export type TabularTableMatch = {
   document_uid: string;
-  document_library_tags_ids?: string[] | null;
-  owner_filter?: OwnerFilter | null;
-  team_id?: string | null;
-};
-export type DetectOutliersRequest = {
-  method?: "zscore" | "iqr";
-  threshold?: number;
-};
-export type PlotHistogramRequest = {
-  column: string;
-  bins?: number;
-};
-export type PlotScatterRequest = {
-  x_col: string;
-  y_col: string;
-};
-export type TrainModelRequest = {
-  target: string;
-  features: string[];
-  model_type?: "linear" | "random_forest";
-};
-export type PredictRowRequest = {
-  row: {
+  document_name: string;
+  query_alias: string;
+  sheet?: string | null;
+  title?: string | null;
+  matched_columns?: string[];
+  rows?: {
     [key: string]: any;
-  };
+  }[];
+  /** True when more matching rows existed than were returned (max_rows_per_table reached): other occurrences remain in this table. */
+  row_truncated?: boolean;
 };
-export type SaveModelRequest = {
-  name: string;
+export type TabularSearchResponse = {
+  keyword: string;
+  normalized_keyword: string;
+  matches?: TabularTableMatch[];
+  /** True when the max_matching_tables cap was reached: other tables may also contain the value. */
+  tables_truncated?: boolean;
+  searched_dataset_uids?: string[];
 };
-export type LoadModelRequest = {
-  name: string;
-};
-export type DetectOutliersMlRequest = {
-  features: string[];
-  method?: "isolation_forest" | "lof";
-};
-export type PcaRequest = {
-  features: string[];
-  n_components?: number;
+export type TabularSearchRequest = {
+  /** Word or expression to locate. Use precise values only: a generic term matches too many tables and cannot disambiguate. */
+  keyword: string;
+  dataset_uids?: string[] | null;
+  /** Optional list of library tag IDs used to keep the search inside selected libraries. */
+  document_library_tags_ids?: string[] | null;
+  /** Optional ownership scope: 'personal' or 'team'. */
+  owner_filter?: OwnerFilter | null;
+  /** Team ID required when owner_filter is 'team'. */
+  team_id?: string | null;
+  /** Maximum matching rows returned per table (ceiling). */
+  max_rows_per_table?: number;
+  /** Maximum tables with a match returned before the search stops (ceiling). */
+  max_matching_tables?: number;
 };
 export type PrometheusQueryRequest = {
   /** PromQL expression to evaluate. */
@@ -2661,6 +2592,8 @@ export const {
   useLazyGetVisualEvidenceArtifactQuery,
   useTestPostSuccessMutation,
   useRerankDocumentsMutation,
+  useGetDocumentTreeKnowledgeFlowV1DocumentsTreePostMutation,
+  useSummarizeDocumentKnowledgeFlowV1DocumentsDocumentUidSummarizePostMutation,
   useQueryKnowledgeFlowV1KpiQueryPostMutation,
   useGetCreateResSchemaKnowledgeFlowV1ResourcesSchemaGetQuery,
   useLazyGetCreateResSchemaKnowledgeFlowV1ResourcesSchemaGetQuery,
@@ -2709,35 +2642,14 @@ export const {
   useGetRunKnowledgeFlowV1DevBenchRunsRunIdGetQuery,
   useLazyGetRunKnowledgeFlowV1DevBenchRunsRunIdGetQuery,
   useDeleteRunKnowledgeFlowV1DevBenchRunsRunIdDeleteMutation,
-  useListTabularDatasetsQuery,
-  useLazyListTabularDatasetsQuery,
-  useGetTabularDatasetSchemaQuery,
-  useLazyGetTabularDatasetSchemaQuery,
+  useListTabularDocumentsQuery,
+  useLazyListTabularDocumentsQuery,
+  useGetTabularDocumentsSchemasQuery,
+  useLazyGetTabularDocumentsSchemasQuery,
+  useGetTabularDocumentMarkdownQuery,
+  useLazyGetTabularDocumentMarkdownQuery,
   useReadQueryMutation,
-  useListDatasetsQuery,
-  useLazyListDatasetsQuery,
-  useSetDatasetMutation,
-  useHeadQuery,
-  useLazyHeadQuery,
-  useDescribeQuery,
-  useLazyDescribeQuery,
-  useDetectOutliersMutation,
-  useCorrelationsQuery,
-  useLazyCorrelationsQuery,
-  usePlotHistogramMutation,
-  usePlotScatterMutation,
-  useTrainModelMutation,
-  useEvaluateModelQuery,
-  useLazyEvaluateModelQuery,
-  usePredictRowMutation,
-  useSaveModelMutation,
-  useListModelsQuery,
-  useLazyListModelsQuery,
-  useLoadModelMutation,
-  useTestDistributionQuery,
-  useLazyTestDistributionQuery,
-  useDetectOutliersMlMutation,
-  useRunPcaMutation,
+  useSearchTabularValuesMutation,
   useOsHealthQuery,
   useLazyOsHealthQuery,
   useOsPendingTasksQuery,

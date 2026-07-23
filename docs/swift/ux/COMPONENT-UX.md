@@ -205,6 +205,14 @@ shared molecule.
   tinted pills (see `TraceEntryRow`) rather than the flat uppercase label; reasoning detail
   opens in the overlay drawer with markdown rendering instead of raw JSON.
 
+- **Repeated content-free "Done" rows (2026-07-22)** — every tool call previously produced
+  two trace rows: a "Tool use" phase thought (title "Calling `<tool>`", secondary text always
+  the hardcoded literal "Done"/"Error") and the paired `tool_call`/`tool_result` combo row.
+  The thought row is now filtered out entirely (`traceUtils.groupTraceEntries()`) — it was
+  pure bookkeeping duplication, not agent reasoning. The combo row alone now carries the
+  humanized tool label, the status dot, and (new) the real execution latency. See
+  `RUNTIME-EXECUTION-CONTRACT.md` §8.21 and `AGENT-THINKING-API-RFC.md` Amendment B.
+
 ---
 
 ### `TraceEntryRow`
@@ -249,12 +257,18 @@ shared molecule.
 
 #### Open UX issues
 
-- **Theme** — Monaco is always `vs-dark` (now only used for tool call/result entries). The
-  spec says theme-aware (`vs` / `vs-dark`). Not yet wired to the app theme context.
+- **Per-call source curation** — the RAG tool view reads `hits` straight out of the tool's
+  raw `content` JSON (the same list the LLM sees), not the narrower, curated
+  `ToolResultRuntimeEvent.sources` (built via `select_citable_sources()`, which drops
+  dataset-pointer chunks and low-relevance hits). Wiring per-call `sources` through
+  `ToolResultPart` would need a new additive field end-to-end (backend schema + persistence
+  + SSE consumption) — a reasonable fast-follow, not required for the current fix since
+  `content` already carries enough to render useful citations.
 
-- **Tool entry rendering** — tool call/result entries still render as raw Monaco JSON.
-  A prettier structured view (args table, result preview) is a follow-up; only reasoning /
-  note entries got the markdown treatment in the 2026-06-18 pass.
+- **Unrecognized-tool fallback still raw JSON** — only two content shapes are recognized
+  (SQL `{sql_query, rows, error}`, RAG `{query, hits}`); any other tool still falls back to
+  the redacted `{action, status, latency}` JSON view. Intentional (see Resolved below) but
+  the list of recognized shapes may need to grow as more tools are added.
 
 #### Resolved
 
@@ -270,6 +284,28 @@ shared molecule.
   render header + conclusion only — no "no reasoning text" placeholder.
 
 - **Close affordance** — `InlineDrawer` already uses the `Icon`-atom close button.
+
+- **Curated tool-result views for SQL and RAG (2026-07-22)** — tool call/result entries no
+  longer always render the blanket-redacted `{action, status, latency}` JSON (from
+  #1774/CHAT-13). Two common, specifically useful content shapes are now recognized and
+  rendered richly: a tabular/SQL result (`{sql_query, rows, error}`) shows the executed SQL
+  plus a row-count and preview; a RAG/vector-search result (`{query, hits}`) shows the
+  search query plus retrieved sources via the existing `SourcesPanel` molecule. Any other
+  tool shape still falls back to the original redacted view — see
+  `RUNTIME-EXECUTION-CONTRACT.md` §8.21.
+
+- **Monaco replaced by `CodeBlock`, single header copy action (2026-07-22)** — manual UI
+  testing found the Monaco JSON pane (forced `vs-dark`, editor chrome, imposed fixed
+  heights — the theme open issue above) heavy for what's often a 3-line payload, and each
+  view had its own scattered copy button. `MonacoPane` is no longer used anywhere in this
+  drawer (nor anywhere else in the frontend — the atom, `@monaco-editor/react`, and
+  `monaco-editor` were removed from the codebase entirely). `InlineDrawer` gained a
+  `headerActions` slot (next to the close button) that now hosts a single copy action:
+  the SQL query text for the SQL view, the curated JSON for the generic fallback, nothing
+  for the RAG view (sources are browsed via `SourcesPanel`, not copied as text). The
+  generic fallback and the SQL row preview render through the same lightweight `CodeBlock`
+  used for the SQL query itself (Prism syntax highlighting, no editor chrome, no imposed
+  height — the drawer body scrolls naturally instead).
 
 ---
 
@@ -563,6 +599,36 @@ _(none yet)_
 
 ---
 
+### `DocumentViewer`
+
+**Location:** `src/rework/components/shared/organisms/DocumentViewer/DocumentViewer.tsx`
+**Status:** `Functional`
+
+Shared, chrome-less document content renderer used by both `DocumentViewerPage`
+(`/documents/:uid`, chat-citation flow) and `DocumentWorkspace`'s corpus preview
+drawer (`InlineDrawer`). Picks a render strategy from the file's real extension
+(`isPdfFile` on `identity.document_name`, never the display title): `.pdf` renders
+natively via `PdfStreamingDocumentViewer` (`react-pdf`); every other format renders
+the existing markdown extraction (`GET /knowledge-flow/v1/markdown/{uid}`). Owns no
+header/close affordance — both hosts already provide one. Landed 2026-07-19 (FRONT-13)
+to close the "PDF viewer parity" regression from kea tracked on GitHub issue #1956.
+
+#### Open UX issues
+
+- **Assistant side panel** — FRONT-13's other half (collapsible "ask the assistant"
+  panel next to the viewer) is not built yet, blocked on an agent-selection product
+  decision — see `FRONTEND-BACKLOG.md` §19.
+- **PDF toolbar** — no page count, zoom, or page-jump controls; pages render as one
+  continuous scroll at a fixed 0.8 scale. Revisit if users report needing them.
+- **Chunk highlighting** — `#chunk=...` fragment handling remains deferred (CHAT-08,
+  RAG-AGENT-QUALITY-RFC.md §5), unaffected by this component.
+
+#### Resolved
+
+_(none yet)_
+
+---
+
 ### `HitlPrompt`
 
 **Location:** `src/rework/components/shared/molecules/HitlPrompt/HitlPrompt.tsx`
@@ -586,6 +652,12 @@ _(none yet)_
 - **`readonly` prop added (2026-04-27)** — `HitlPrompt` now accepts `readonly?: boolean`.
   When set, choice buttons are disabled and the free-text section is hidden. Used by
   `ManagedChatPage` when rendering `hitl_request` history rows.
+
+- **Dropped its own `max-width: 72%` / `align-self: flex-start` (2026-07-22)** — `HitlPrompt`
+  was missed by the 720px centered lane refactor (2026-05-18): it kept a scattered per-component
+  width constraint instead of filling `.lane` like its siblings, which cramped content-heavy
+  cards (e.g. a multi-finding classification table) into a narrow column with excess whitespace
+  beside it.
 
 ---
 
@@ -932,6 +1004,13 @@ _(none yet)_
 
 Non-blocking right-side panel. `position: fixed`, slides in from the right via `transform: translateX(100%)` → `translateX(0)`. ESC key closes. `--drawer-width` CSS variable, default `480px`. Does not trap focus (main content stays interactive).
 
+Push layout supports opt-in drag-to-resize (`resizable` prop, 2026-07-22): a col-resize
+grip on the left edge, bounds 320–900px capped at 45vw, width persisted per
+`persistKey` — the legacy chat's `ResizablePaneShell` UX ported to the rework.
+`CapabilitySidePanelHost` enables it with one shared key, so the
+writable-document editor and the PPT preview panels share a persisted width.
+Hidden below the 720px breakpoint (push drawers go fixed full-width there).
+
 #### Open UX issues
 
 - **Focus trap** — deliberately no focus trap (main content stays interactive per RFC §2.5). Confirm with accessibility review: WCAG 2.1 SC 2.1.2 applies to modal dialogs, not drawers; but screen reader users should be informed the drawer is open.
@@ -1209,6 +1288,182 @@ by default when warnings are present. A `failed` task renders `task.error` inlin
 #### Resolved
 
 _(none yet)_
+
+---
+
+### `WritableDocumentPane` (writable_document capability)
+
+**Location:** `src/rework/features/capabilities/writable_document/WritableDocumentPane.tsx`
+**Status:** `Functional`
+
+The right-column side panel of the `writable_document` capability (#1905, Kea port):
+a Markdown WYSIWYG editor (`@mdxeditor/editor`) where the user and the agent co-write
+documents. Tab strip when the session has several documents; editor remounts on agent
+writes (keyed `${document_id}:${updated_at}`) but never while the user types; 800 ms
+debounced autosave with a "Saving…" indicator; export menu (Word `.docx` / Markdown).
+Mounted by `CapabilitySidePanelHost` when the capability is active.
+
+Auto-open (2026-07-22): opening a conversation that already holds a document
+opens the editor pane immediately (`WritableDocumentAutoOpenProbe`, a headless
+`sessionProbes` plugin entry evaluated once per conversation-open against the
+authoritative list API). Live writes mid-conversation keep their existing pop
+via the card renderer; a list refresh never re-opens a pane the user closed.
+writable_document only — the PPT preview declares no probe.
+
+Double close removed (2026-07-22): the pane (and `PptPreviewPane`) shipped its
+own header close button — a Kea-port leftover from `ResizablePaneShell`, which
+had no chrome. Inside `InlineDrawer` that made two ✕ with the same action; the
+drawer's header ✕ is now the single close affordance, like every other push
+drawer.
+
+#### Open UX issues
+
+- **Not yet design-reviewed** — MDXEditor toolbar density, tab strip styling, and the
+  saving indicator's placement have had no designer pass; the editor ships MDXEditor's
+  default theme which may clash with the design tokens in dark mode.
+
+#### Resolved
+
+_(none yet)_
+
+---
+
+### `WritableDocumentCardRenderer` (writable_document capability)
+
+**Location:** `src/rework/features/capabilities/writable_document/WritableDocumentCardRenderer.tsx`
+**Status:** `Functional`
+
+The `writable_document` chat-part card shown in an assistant message after the agent
+writes or revises a document: title, last-author caption, open-in-panel action, and
+the export menu. Auto-opens the pane once per `(document_id, updated_at)` for fresh
+parts only (>5 s history-replay guard, same heuristic as the ppt_filler preview card).
+
+#### Open UX issues
+
+_(none)_
+
+#### Resolved
+
+_(none yet)_
+
+---
+
+## #1903 PPT Filler capability organisms
+
+### `PptFillerConfigForm`
+
+**Location:** `src/rework/features/capabilities/ppt_filler/PptFillerConfigForm.tsx`
+**Status:** `Functional`
+
+The ppt_filler capability's custom agent-form widget (rendered inside its
+`CapabilityCard` via the `configWidgets` plugin slot, RFC §9 item 4): `.pptx`
+upload/replace control, instant per-slide schema preview through the
+capability's stateless `/analyze` pod route, slide-numbered template errors
+i18n'd by stable code, and Save gating while the mandatory template is missing
+or invalid. The staged file travels with the atomic save (multipart
+`with-assets` endpoints); the preview never persists anything.
+
+#### Open UX issues
+
+- **Not yet design-reviewed** — upload row layout, schema-preview density on
+  templates with many slides, and error-list prominence all need a designer
+  pass.
+- **No drag-and-drop** — file selection is button+picker only.
+
+#### Resolved
+
+_(none yet)_
+
+---
+
+### `PptPreviewCardRenderer` + `PptPreviewPane`
+
+**Location:** `src/rework/features/capabilities/ppt_filler/PptPreviewCardRenderer.tsx`, `.../PptPreviewPane.tsx`
+**Status:** `Functional`
+
+The `ppt_preview` chat part (compact card: title, open-preview, `.pptx`
+download) and the PDF side pane it opens (react-pdf, all pages vertical,
+width-fitted, fresh pdf.js worker per mount). A live fill auto-opens the pane
+once per deck version (5s page-age gate keeps history replay from popping it);
+the pane mounts through the capability side-panel host's push drawer.
+
+#### Open UX issues
+
+- **Not yet design-reviewed** — card visual weight in the thread, pane default
+  width, and the auto-open heuristic all need product validation.
+- **No page thumbnails / jump navigation** — long decks scroll only.
+
+#### Resolved
+
+_(none yet)_
+
+---
+
+## Swift UX bug pass — #2023 / #1952 (2026-07-20)
+
+Fixes shipped together from live-testing feedback; all `Functional`, awaiting
+design review.
+
+### `CapabilityCard` (agent form Tools tab)
+
+Toggling a capability no longer changes the name's font size
+(`--font-label-medium` → `--font-title-small` caused every card below to jump).
+Active emphasis is now weight + `--primary` color at identical metrics; only
+the config sub-form still expands, which is expected.
+
+### `TeamFilesystemBrowser` / `AgentFilesystemBrowser` (Resources tabs)
+
+Expanding an empty folder now shows the same explanatory hint pattern as the
+corpus workspace (`.hint`, `--on-surface-muted`, body-small) instead of an
+empty dropdown: generic `rework.resources.empty.folder` for folders, dedicated
+`empty.agentFiles` inside an agent's space, and `empty.agents` when no agent
+has files at all.
+
+### `TuningFieldRenderer` — `document_libraries` widget (agent form)
+
+An array field whose `ui.widget` is `document_libraries`
+(document_access `library_tag_ids`) renders the `DocumentLibraryScopePicker`
+tree instead of the raw tag-id `TagInput`. Unknown widget ids fall back to the
+`TagInput`.
+
+### `AgentFormBody` audit footer (#1952)
+
+"Created by" resolves the uid to first/last name (fallback username, then uid)
+via `GET /users/by-ids`, and shows "Updated by …" when the instance has been
+user-edited (`updated_by`).
+
+### `document_access` config/chat parity with the legacy search tool
+
+The Document access capability now offers the exact configuration surface and
+composer controls of "Document search (legacy)": Document library picker and
+Document picker toggles (split), Bind to specific libraries gating the
+bound-libraries tree (`ui.visible_when`; bound ids are inert while unbound,
+like the legacy tool), File attachments, Search policy picker (configured
+policy becomes the picker default; enforced only when the picker is hidden),
+RAG scope picker + default. All emitted as the same stock widgets — the
+choices travel on `RuntimeContext`, which the v2 document-search adapter
+already honors. The manifest version stays 0.1.0 pre-GA; stored older slices
+revalidate unchanged (the single scope toggle maps onto the split ones, and a
+pre-`bind_libraries` library scope stays binding). The legacy tool's "Bound
+document libraries" raw tag-id input now renders as the library tree, gated
+on its binding toggle, via `ui.widget` / `ui.visible_when` hints in the pod's
+`mcp_catalog.yaml`.
+
+### `DocumentWorkspace` — library deletion
+
+Corpus library folders now carry a delete action (same `canUpdateResources`
+gate as upload/new-folder), with a confirmation dialog. Deletion cascades
+server-side: sub-folders and the untagging of contained documents are the
+backend's `delete_tag_for_user`. Errors surface as a toast with the backend
+detail. (Found live 2026-07-20: no delete affordance existed at all.)
+
+### `CategoryPicker` / prompt category surfaces
+
+Pickers and filters offer exactly 7 functional categories (doc-assist,
+summary, extraction, writing, analysis, conversational, integration).
+`monitoring`, `migration` and `other` are retired from selection but keep
+their pill rendering on pre-existing prompts; the "show more" fold is gone
+(7 visible).
 
 ---
 

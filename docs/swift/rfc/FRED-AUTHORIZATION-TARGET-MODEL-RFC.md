@@ -2,8 +2,11 @@
 
 **Status:** Proposed target model; Parts 5-8 are implemented in the v2.1.1
 candidate. The former item `8b` — removal of the Keycloak-`groups`-claim-derived
-`team_member` fallback — is complete and its personal-space regression is corrected
-and recorded in this RFC and the runtime contract. Part 7 (`AUTHZ-06`) implements
+`team_member` fallback — is complete; its personal-space regression went
+through two fixes (an identity-only guard, then superseded by `AUTHZ-08`'s
+real, write-guarded ReBAC tuple — see `platform/REBAC.md` § Personal teams)
+before being fully closed, including the "list my teams" enumeration case the
+first fix couldn't cover. Part 7 (`AUTHZ-06`) implements
 cumulative team roles. Part 8 (`AUTHZ-07`, revised §42) implements JWT plus
 deploy-secret dual proof, self-promotion only, a durable one-time completion marker,
 and declarative provisioning as specified by `PLATFORM-IMPORT-RFC.md`. The superseded
@@ -899,6 +902,37 @@ application logger for the audit window, plus a queryable readiness-report endpo
 store. A durable audit sink is a separate, larger decision (`OBSERV` domain) out of
 scope for this two-week launch — flag as a follow-up, not a launch blocker.
 
+### 24.9 Team-scoped user search for the add-member flow (2026-07-20)
+
+Found during a live evaluation-UI testing session: `TeamSettingsMembers.tsx`'s "add
+member" search box is correctly gated on the caller's own `can_administer_members`
+(owner-only per `§24.7`, no platform escalation) — but its data source was
+`GET /control-plane/v1/users`, gated on `OrganizationPermission.CAN_ADMINISTER_USERS`
+(`platform_admin` only, `users/api.py`). Any team admin who is not also
+`platform_admin` therefore saw the search box render (their own permission check
+passed) but it always returned nothing (the org-wide listing 403'd, swallowed
+silently by the frontend) — a real functional gap, not an edge case, since team
+ownership and platform administration are deliberately disjoint roles in this model.
+
+**Rejected fix:** loosen `CAN_ADMINISTER_USERS` on `/users` to also accept
+`can_administer_members` on any team. Rejected because it would let any team owner
+enumerate the entire org's Keycloak directory (every user's name/username/email) in
+one call — a real widening of who can read that data, and the same shape of mistake
+`§24.7` already found once in this permission family, just running the other
+direction (team-scope reaching into org-wide data instead of platform-scope reaching
+into team data).
+
+**Chosen fix:** a new, narrower endpoint, `GET /teams/{team_id}/candidate-members`
+(`teams/api.py::search_candidate_team_members`), gated on `can_administer_members`
+for that specific team. It requires a non-empty search query (`min_length=2`,
+enforced server-side, never just client-side) and returns only matching users
+already excluding current team members — never a full-directory listing. The
+org-wide `/users` endpoint and its `platform_admin` gate are unchanged.
+`users/service.py::search_users` backs it with Keycloak's native `search` query
+param rather than fetching every user and filtering in memory.
+
+Verified: `tests/test_team_member_roles.py::test_search_candidate_team_members_checks_permission_and_excludes_existing_members`.
+
 ## 25a. Second finding: organization-level content bypass (2026-07-09, deferred)
 
 While implementing `§24.2`, a second and larger gap was found: `OrganizationPermission.CAN_READ_CONTENT` /
@@ -968,6 +1002,10 @@ per-tag loop):
   `list_models`, `load_model`, `test_distribution`, `detect_outliers_ml`, `run_pca`) now
   re-check the tag id authorized at `set_dataset` time, carried in the service session
   state, rather than trusting the initial gate indefinitely.
+  **2026-07-19 update:** `statistic/controller.py` and the whole statistics MCP
+  capability were deleted outright (dead/unreachable, never wired into any agent
+  template — see `docs/swift/capabilities/AUTHORING.md` history). These 16 call
+  sites no longer exist; the finding is moot, not just fixed.
 - `vector_search/vector_search_controller.py`: `similarity_search`,
   `get_visual_evidence_artifact`, `rerank`.
 - `corpus_manager/corpus_manager_controller.py`: `build_toc`, `revectorize`, `purge`

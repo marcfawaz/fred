@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 import { DocRow, type DocRowMoreAction } from "@shared/molecules/DocRow/DocRow.tsx";
 import { FolderRow } from "@shared/molecules/FolderRow/FolderRow.tsx";
 import { DocumentUploadDrawer } from "@shared/organisms/DocumentUploadDrawer/DocumentUploadDrawer.tsx";
+import { DocumentViewer } from "@shared/organisms/DocumentViewer/DocumentViewer.tsx";
+import { InlineDrawer } from "@shared/molecules/InlineDrawer/InlineDrawer.tsx";
 import { useToast } from "@shared/molecules/Toast/ToastProvider";
 import {
   type DocumentMetadata,
   type OwnerFilter,
   type TagWithItemsId,
   useBrowseDocumentsByTagKnowledgeFlowV1DocumentsMetadataBrowsePostMutation,
+  useDeleteTagKnowledgeFlowV1TagsTagIdDeleteMutation,
   useListAllTagsKnowledgeFlowV1TagsGetQuery,
   useProcessDocumentsKnowledgeFlowV1ProcessDocumentsPostMutation,
 } from "../../../../../slices/knowledgeFlow/knowledgeFlowOpenApi";
@@ -32,16 +35,24 @@ import { selectActiveTasks } from "../../../../features/tasks/taskSlice";
 import { useRefetchOnTaskSuccess } from "../../../../features/tasks/useRefetchOnTaskSuccess";
 import { useNotifyOnNewTaskTarget } from "../../../../features/tasks/useNotifyOnNewTaskTarget";
 import { useDocumentCommands } from "../../../../../components/documents/common/useDocumentCommands";
-import { useConfirmationDialog } from "../../../../../components/ConfirmationDialogProvider";
+import { useConfirmationDialog } from "@shared/molecules/ConfirmationDialog/ConfirmationDialogProvider";
 import { useGetTeamQuery } from "../../../../../slices/controlPlane/controlPlaneApiEnhancements";
 import { useTeamCapabilities } from "@hooks/useTeamCapabilities.ts";
 import CreateFolderModal from "../CreateFolderModal/CreateFolderModal.tsx";
 import { deriveDocStatus } from "./deriveDocStatus.ts";
+import { pagesToRefreshOnTaskCompletion } from "./refreshOnCompletion.ts";
 import { ResourcePagination } from "./ResourcePagination/ResourcePagination.tsx";
 import styles from "./DocumentWorkspace.module.css";
 
 const PAGE_SIZE = 50;
 const INDENT_STEP = 16;
+// Port of main's DocumentLibraryList live-status loop: while a loaded row is
+// processing, its folder page is reloaded on this cadence so the badge flips
+// to Ready/Failed without a manual refresh.
+const DOC_STATUS_POLL_MS = 3000;
+// How long a just-reprocessed row stays pinned to "processing" when the
+// backend never re-stamps its stages (dead worker, dropped workflow).
+const REPROCESS_OVERRIDE_TTL_MS = 90_000;
 
 interface PageState {
   docs: DocumentMetadata[];
@@ -104,6 +115,16 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedFolderFull, setSelectedFolderFull] = useState<string | null>(null);
   const [perTag, setPerTag] = useState<Record<string, PageState>>({});
+  // "Just reprocessed" rows pinned to "processing" (#1903-era gap): the
+  // reprocess route (`POST /process-documents`) returns only the Temporal
+  // workflow id — unlike uploads it creates no TaskService task the SSE task
+  // feed could follow — and until the workflow stamps `processing.stages` a
+  // reload still shows the OLD stages. Each entry keeps its click-time stages
+  // snapshot; the override is dropped as soon as the backend visibly
+  // re-stamps the document (snapshot mismatch) or the TTL passes.
+  const [reprocessOverrides, setReprocessOverrides] = useState<Record<string, { snapshot: string; deadline: number }>>(
+    {},
+  );
   const [uploadOpen, setUploadOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   // undefined => create at the top level; a path => create a subfolder under it.
@@ -127,6 +148,7 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
 
   const [browseDocumentsByTag] = useBrowseDocumentsByTagKnowledgeFlowV1DocumentsMetadataBrowsePostMutation();
   const [processDocuments] = useProcessDocumentsKnowledgeFlowV1ProcessDocumentsPostMutation();
+  const [deleteTag] = useDeleteTagKnowledgeFlowV1TagsTagIdDeleteMutation();
 
   const selectedNode = selectedFolderFull ? findNode(tree, selectedFolderFull) : null;
   const selectedTag = selectedNode?.tagsHere[0] ?? null;
@@ -151,6 +173,49 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
     },
     [browseDocumentsByTag],
   );
+
+  // Drop an override once the backend visibly re-stamped the document (its
+  // fresh stages no longer match the click-time snapshot — the real derived
+  // status takes over) or its safety deadline passed.
+  useEffect(() => {
+    const uids = Object.keys(reprocessOverrides);
+    if (uids.length === 0) return;
+    const now = Date.now();
+    const stale = new Set<string>();
+    for (const uid of uids) {
+      const entry = reprocessOverrides[uid];
+      if (entry.deadline < now) {
+        stale.add(uid);
+        continue;
+      }
+      for (const page of Object.values(perTag)) {
+        const doc = page.docs.find((d) => d.identity.document_uid === uid);
+        if (doc && JSON.stringify(doc.processing?.stages ?? {}) !== entry.snapshot) stale.add(uid);
+      }
+    }
+    if (stale.size > 0) {
+      setReprocessOverrides((prev) => Object.fromEntries(Object.entries(prev).filter(([uid]) => !stale.has(uid))));
+    }
+  }, [perTag, reprocessOverrides]);
+
+  // Port of main's DocumentLibraryList polling loop: while any loaded row is
+  // (or is pinned) "processing", reload the folder pages showing it so the
+  // badge flips to Ready/Failed without a manual refresh.
+  useEffect(() => {
+    const pendingTagIds = Object.entries(perTag)
+      .filter(([, page]) =>
+        page.docs.some(
+          (doc) =>
+            deriveDocStatus(doc).status === "processing" || reprocessOverrides[doc.identity.document_uid] !== undefined,
+        ),
+      )
+      .map(([tagId]) => tagId);
+    if (pendingTagIds.length === 0) return;
+    const interval = setInterval(() => {
+      for (const tagId of pendingTagIds) void loadTagPage(tagId, perTag[tagId]?.offset ?? 0);
+    }, DOC_STATUS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [perTag, reprocessOverrides, loadTagPage]);
 
   const commands = useDocumentCommands({
     refetchTags,
@@ -218,6 +283,13 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
           },
         }).unwrap();
         showSuccess?.({ summary: t("rework.resources.toast.processStarted") });
+        setReprocessOverrides((prev) => ({
+          ...prev,
+          [doc.identity.document_uid]: {
+            snapshot: JSON.stringify(doc.processing?.stages ?? {}),
+            deadline: Date.now() + REPROCESS_OVERRIDE_TTL_MS,
+          },
+        }));
         await loadTagPage(tagId, perTag[tagId]?.offset ?? 0);
       } catch (e: unknown) {
         showError?.({
@@ -227,6 +299,46 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
       }
     },
     [processDocuments, showSuccess, showError, t, loadTagPage, perTag],
+  );
+
+  // Deletes the folder's tag; the backend cascades to sub-folders and untags/
+  // deletes their documents (TagPermission.DELETE, tag_service.py), so this is
+  // safe to offer for both empty and populated folders — the confirmation
+  // message just makes the blast radius explicit before it happens.
+  const confirmDeleteFolder = useCallback(
+    (node: TagNode) => {
+      const tag = node.tagsHere[0];
+      if (!tag) return;
+      const docCount = tag.item_ids?.length ?? 0;
+      showConfirmationDialog({
+        title: t("rework.resources.confirm.deleteFolderTitle"),
+        message:
+          docCount > 0
+            ? t("rework.resources.confirm.deleteFolderMessageWithDocs", { name: node.name, count: docCount })
+            : t("rework.resources.confirm.deleteFolderMessageEmpty", { name: node.name }),
+        onConfirm: () =>
+          void deleteTag({ tagId: tag.id })
+            .unwrap()
+            .then(() => {
+              showSuccess?.({ summary: t("rework.resources.toast.deleteFolderSuccess") });
+              setExpanded((prev) => {
+                const next = new Set(prev);
+                next.delete(node.full);
+                return next;
+              });
+              setSelectedFolderFull((prev) => (prev === node.full ? null : prev));
+              void refetchTags();
+            })
+            .catch((e: unknown) => {
+              showError?.({
+                summary: t("validation.error"),
+                detail:
+                  (e as { data?: { detail?: string } })?.data?.detail ?? t("rework.resources.toast.deleteFolderError"),
+              });
+            }),
+      });
+    },
+    [deleteTag, showConfirmationDialog, showSuccess, showError, t, refetchTags],
   );
 
   const moreActionsFor = useCallback(
@@ -270,6 +382,18 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
     [activeTasks],
   );
 
+  // When a document's ingestion task finishes, its row hands off from the live task
+  // state ("processing") back to the stored `processing.stages`. Those stages were
+  // snapshotted by `loadTagPage` before the pipeline completed, so without a refetch
+  // the badge falls back to "raw"/"Brut" until a manual reload. Re-load any loaded
+  // page holding a just-finished document so the derived status catches up to "ready".
+  const prevRunningDocIds = useRef<Set<string | undefined>>(new Set());
+  useEffect(() => {
+    const pages = pagesToRefreshOnTaskCompletion(prevRunningDocIds.current, runningDocIds, perTag);
+    prevRunningDocIds.current = runningDocIds;
+    for (const { tagId, offset } of pages) void loadTagPage(tagId, offset);
+  }, [runningDocIds, perTag, loadTagPage]);
+
   const aggregateFor = useCallback(
     (node: TagNode) => {
       const tag = node.tagsHere[0];
@@ -310,6 +434,7 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
                 : undefined
             }
             onCreateSubfolder={canCreateFolder ? () => openCreateFolder(node.full) : undefined}
+            onDelete={tag && canCreateFolder ? () => confirmDeleteFolder(node) : undefined}
           />
         </div>
 
@@ -323,7 +448,9 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
                     {t("rework.resources.loading")}
                   </div>
                 )}
-                {page && !page.loading && page.docs.length === 0 && (
+                {/* Leaf folders only: a folder whose content IS its subfolders
+                    is not "empty", so no hint under the children. */}
+                {page && !page.loading && page.docs.length === 0 && children.length === 0 && (
                   <div className={styles.hint} style={{ paddingLeft: docIndent }}>
                     {t("rework.resources.empty.folder")}
                   </div>
@@ -334,7 +461,9 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
                       id={doc.identity.document_uid}
                       name={doc.identity.document_name || doc.identity.title || doc.identity.document_uid}
                       fileType={doc.file?.file_type ?? "other"}
-                      status={deriveDocStatus(doc).status}
+                      status={
+                        reprocessOverrides[doc.identity.document_uid] ? "processing" : deriveDocStatus(doc).status
+                      }
                       selected={selectedDocId === doc.identity.document_uid}
                       onSelect={() => setSelectedDocId(doc.identity.document_uid)}
                       onPreview={() => commands.preview(doc)}
@@ -375,6 +504,16 @@ const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, DocumentWorkspaceP
         <div className={styles.list}>{topLevel.map((node) => renderNode(node, 0))}</div>
       )}
 
+      <InlineDrawer
+        open={!!commands.previewTarget}
+        onClose={commands.closePreview}
+        title={commands.previewTarget?.fileName ?? t("rework.resources.preview.title")}
+        width="80vw"
+      >
+        {commands.previewTarget && (
+          <DocumentViewer documentUid={commands.previewTarget.documentUid} fileName={commands.previewTarget.fileName} />
+        )}
+      </InlineDrawer>
       <DocumentUploadDrawer
         isOpen={uploadOpen}
         onClose={() => setUploadOpen(false)}

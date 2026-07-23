@@ -67,6 +67,11 @@ REQUIRED_METADATA_FIELDS: dict[str, Dict[str, str]] = {
 SAFE_METADATA_MAPPING_UPDATES: dict[str, Dict[str, str]] = {
     **REQUIRED_METADATA_FIELDS,
     "retrievable": {"type": "boolean"},
+    # Discriminates a real ingested chunk ("content", the default when the field
+    # is absent — see chunks written before this field existed) from a synthetic
+    # "dataset_pointer" chunk describing a structured/tabular dataset that isn't
+    # itself vectorized (RAG-DATASET-DISCOVERY-RFC.md).
+    "chunk_kind": {"type": "keyword"},
 }
 
 VECTOR_METADATA_PROPERTIES: Dict[str, Any] = {
@@ -863,7 +868,7 @@ class OpenSearchVectorStoreAdapter(BaseVectorStore):
             body = {"query": {"term": {"metadata.document_uid": {"value": document_uid}}}}
             resp = self._client.delete_by_query(index=self._index, body=body)
             deleted = int(resp.get("deleted", 0))
-            logger.debug("[VECTOR][OPENSEARCH] deleted %s vector chunks for document_uid=%s.", deleted, document_uid)
+            logger.info("[VECTOR][OPENSEARCH] deleted %s vector chunks for document_uid=%s.", deleted, document_uid)
         except Exception:
             logger.exception("[VECTOR][OPENSEARCH] failed to delete vectors for document_uid=%s.", document_uid)
             raise RuntimeError("Failed to delete vectors from OpenSearch.")
